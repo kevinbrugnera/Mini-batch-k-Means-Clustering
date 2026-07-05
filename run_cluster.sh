@@ -26,7 +26,7 @@ source ~/pyvenv/bin/activate
 # Launch the spark-submit command applied to the target script. Change specs based on resources and run objective
 spark-submit \
   --master spark://$MASTER_IP:7077 \
-  --executor-memory 2G \
+  --executor-memory 1G \
   --total-executor-cores 6 \
   --executor-cores 2 \
   --py-files functions.py \

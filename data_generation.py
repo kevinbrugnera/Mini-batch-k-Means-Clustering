@@ -133,12 +133,10 @@ def distribute_generated_data(data_dir="data"):
     for i, ip in enumerate(workers):
         print(f'Worker {i} IP: {ip}')
     
-    
-    # Dynamically get the current OS user
-    current_user = getpass.getuser()
-    
-    # Get the absolute path of the data directory to ensure rsync works correctly from any location
-    abs_data_dir = os.path.abspath(data_dir)
+    # State worker user (always ubuntu on cloudveneto I think) and data path
+    remote_user = "ubuntu"
+    remote_project_path = "~/Project"
+
     
     print("\n" + "="*40)
     print(f"YOU'RE ON A CLUSTER WITH ({len(workers)} WORKERS)")
@@ -146,22 +144,35 @@ def distribute_generated_data(data_dir="data"):
     
     for ip in workers:
         print(f'-> Transferring data to {ip}...')
+
+        #In order for the rest of the code to work the data has to be in home/ubuntu/Project/data/...
+        create_dir_command = [
+            "ssh", 
+            "-o", "StrictHostKeyChecking=no", 
+            "-o", "BatchMode=yes",  
+            "-q",
+            f"{remote_user}@{ip}", "mkdir -p ~/Project"]
+        subprocess.run(create_dir_command, check=True)
+
+        scp_command = [
+            "scp",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "BatchMode=yes",
+            "-q",
+            "-r", "data/",
+            f"{remote_user}@{ip}:{remote_project_path}"]
+
         try:
-            # Sychronize the entire data/ folder content using rsync over SSH.
-            subprocess.run(
-                ["rsync", "-avz", f"{abs_data_dir}/", f"{current_user}@{ip}:{abs_data_dir}/"], 
-                check=True, 
-                stdout=subprocess.DEVNULL, # Hides the verbose rsync output
-                stderr=subprocess.DEVNULL  # Hides standard system errors to avoid cluttering the terminal
-            )
-            print(f"Files successfully synchronized on {ip}")
-            
+            # Esegue il comando di sistema
+            subprocess.run(scp_command, check=True)
+            print(f"Successful Data Transfer on {ip}!")
         except subprocess.CalledProcessError:
-            # Graceful degradation: if SSH or rsync fails, print a warning but do not crash the script
             print(f"Network error while sending data to {ip}.")
-            print(f"(If you are using a shared storage volume, you can safely ignore this warning)")
-            
+
+    print("\nData Distriubtion Complete! Ready to work.")
+
     print("="*40 + "\n")
+
 
 
 # ==========================================

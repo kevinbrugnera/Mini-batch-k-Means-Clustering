@@ -21,17 +21,18 @@ EPOCHS = 15                 # Training steps
 RUN_IDENTIFIER = "change for every run with specifics to facilitate understanding" 
 
 # Directory setup
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs("data", exist_ok=True)
 
 # Dynamic Output Paths
-FINAL_RAW_CSV = os.path.join(DATA_DIR, f"raw_{RUN_IDENTIFIER}.csv")
-FINAL_STATS_CSV = os.path.join(DATA_DIR, f"stats_{RUN_IDENTIFIER}.csv")
-PARAMS_CSV = os.path.join(DATA_DIR, "best_params.csv")
+FINAL_RAW_CSV = f"data/raw_{RUN_IDENTIFIER}.csv"
+FINAL_STATS_CSV = f"data/stats_{RUN_IDENTIFIER}.csv"
+
+#Read initialization file with best parameters
+PARAMS_CSV = "data/best_params.csv"
 
 # Updated Path pointing to the dense parquet
-DATASET_PATH = os.path.join(DATA_DIR, "rcv1_dataset")
-EVALUATION_PATH = os.path.join(DATA_DIR, "evaluation_dataset")
+DATASET_PATH = "~/data/rcv1_dataset"
+EVALUATION_PATH = "~/data/evaluation_dataset"
 
 if __name__ == "__main__":
     
