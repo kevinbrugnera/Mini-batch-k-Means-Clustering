@@ -267,7 +267,7 @@ def cluster_diagnostic(evaluation_data_path, champion_centers):
     df_plot['AMI_score'] = ami_score
     df_plot['NMI_score'] = nmi_score
     
-    plot_file_path = evaluation_data_path.replace("evaluation.parquet", "plot_data.parquet")
+    plot_file_path = evaluation_data_path.replace("evaluation_dataset", "plot_data.parquet")
     df_plot.to_parquet(plot_file_path, engine="pyarrow", index=False)
 
     return ami_score, nmi_score, evaluated_documents

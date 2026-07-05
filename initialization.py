@@ -1,10 +1,14 @@
 import os
 import sys
 import time
+from dotenv import load_dotenv
 
 # Force spark to use python version used in the environment
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
+# Load .env file containing IP addresses
+load_dotenv("ips.env")       
 
 import pandas as pd
 import numpy as np
@@ -32,7 +36,7 @@ B_STATS_CSV = os.path.join(DATA_DIR, "b_search_stats.csv")
 PARAMS_CSV = os.path.join(DATA_DIR, "best_params.csv")
 
 # Updated Path pointing to the dense parquet
-PARQUET_PATH = os.path.join(DATA_DIR, "rcv1_dataset.parquet")
+PARQUET_PATH = os.path.join(DATA_DIR, "rcv1_dataset")
 
 start = time.time()
 if __name__ == "__main__":

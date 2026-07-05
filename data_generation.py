@@ -1,13 +1,16 @@
 import os
+import gc
 import sys
 import subprocess
 import getpass
 import numpy as np 
 from sklearn.utils import shuffle 
+from dotenv import load_dotenv
 
 # Force spark to use python version used in the environment
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+load_dotenv("ips.env")       # Load .env file containing IP addresses
 
 import pandas as pd
 from sklearn.datasets import fetch_rcv1
@@ -20,13 +23,6 @@ from sklearn.decomposition import TruncatedSVD
 def generate_data():
     print("Fetching RCV1 dataset...")
     rcv1 = fetch_rcv1()
-    
-    print("Applying Truncated SVD (reduction to 100 latent dimensions)...")
-    svd = TruncatedSVD(n_components=100, random_state=16)
-    
-    # Compress the sparse matrix into a dense NumPy array
-    X_dense = svd.fit_transform(rcv1.data)
-    
     
     print("Extracting MACRO true labels...")
     target_names = rcv1.target_names
@@ -45,41 +41,66 @@ def generate_data():
         # Checks if these labels are in the dictionary. If so, it keeps them
         macros_for_doc = [macro_indices[idx] for idx in row_indices if idx in macro_indices]
         macro_labels_list.append(macros_for_doc)
-        
-    print("Shuffling data and MACRO labels...")
-    # Synchronous shuffle: mixes features and labels while keeping them paired for Spark splits
-    X_shuffled, Y_shuffled = shuffle(X_dense, macro_labels_list, random_state=32)
-    
-    # --- NEW CODE: Creating DataFrames ---
-    print("Generating main DataFrame (full dataset)...")
-    df_main = pd.DataFrame({
-        'features': list(X_shuffled),
-        'true_labels': list(Y_shuffled) 
-    })
-    
-    print("Generating evaluation DataFrame (single-label only)...")
-    # Filter rows where the length of the 'true_labels' list is exactly 1
-    mask_single_label = df_main['true_labels'].apply(lambda x: len(x) == 1)
-    df_eval = df_main[mask_single_label].copy()
-    
-    # Flatten the list in 'true_labels' to a simple string (['ECAT'] -> 'ECAT') 
-    df_eval['true_labels'] = df_eval['true_labels'].apply(lambda x: x[0])
 
-    # Prepare the destination directory
-    data_dir = "data"
+    print("Sub-sampling for Truncated SVD fitting to avoid Memory Overload...")
+    # Use only 150000 documents sampled randomly, should be a good statical representation of the dataset
+    np.random.seed(42)
+    sample_idx = np.random.choice(rcv1.data.shape[0], size=50000, replace=False)
+    sorted_idx = np.sort(sample_idx)
+    X_sample = rcv1.data[sorted_idx]
+
+    print("Fitting Truncated SVD (reduction to 100 latent dimensions)...")
+    svd = TruncatedSVD(n_components=100, random_state=16)
+    svd.fit(X_sample)
+    
+    # RAM cleaning
+    del sample_idx, sorted_idx, X_sample
+    gc.collect()
+
+    print("Dataset Chunking...")
+    
+    data_dir = "data/rcv1_dataset"
+    eval_dir = "data/evaluation_dataset"
     os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(eval_dir, exist_ok=True)
     
-    # Saving in parquet files
-    parquet_dataset_path = os.path.join(data_dir, "rcv1_dataset.parquet")
-    parquet_eval_path = os.path.join(data_dir, "evaluation.parquet")
+    n_docs = rcv1.data.shape[0]
+    batch_size = 10000
     
-    print(f"Saving full dataset to {parquet_dataset_path}...")
-    df_main.to_parquet(parquet_dataset_path, engine="pyarrow", index=False)
-    
-    print(f"Saving evaluation dataset to {parquet_eval_path}...")
-    df_eval.to_parquet(parquet_eval_path, engine="pyarrow", index=False)
-    
-    print("Data generation complete!")
+    for i, start_idx in enumerate(range(0, n_docs, batch_size)):
+        end_idx = min(start_idx + batch_size, n_docs)
+        print(f"  -> Processing and saving chunk {start_idx} to {end_idx} / {n_docs}")
+        
+        # Transofmration
+        X_batch = rcv1.data[start_idx:end_idx]
+        X_dense_batch = svd.transform(X_batch)
+        Y_batch = macro_labels_list[start_idx:end_idx]
+        
+        # Temporary DataFrame to store data
+        df_chunk = pd.DataFrame({
+            'features': list(X_dense_batch),
+            'true_labels': Y_batch
+        })
+        
+        #  Saves data chunk in dedicated diretcory
+        chunk_filename = f"data_{i:02d}.parquet"
+        df_chunk.to_parquet(os.path.join(data_dir, chunk_filename), engine="pyarrow", index=False)
+        
+        # 4Evaluation data saving
+        eval_filename = f"eval_{i:02d}.parquet"
+        # Takes only single label documents
+        mask_single = df_chunk['true_labels'].apply(lambda x: len(x) == 1)
+        df_eval_chunk = df_chunk[mask_single].copy()
+        
+        if not df_eval_chunk.empty:
+            df_eval_chunk['true_labels'] = df_eval_chunk['true_labels'].apply(lambda x: x[0])
+            df_eval_chunk.to_parquet(os.path.join(eval_dir, eval_filename), engine="pyarrow", index=False)
+            
+        # Cleaning RAM
+        del X_batch, X_dense_batch, Y_batch, df_chunk, df_eval_chunk
+        gc.collect()
+        
+    print("\nData generation complete! Data saved in Parquet partitions.")
 
 # ==========================================
 # DISTRIBUTE FILES ON WORKERS

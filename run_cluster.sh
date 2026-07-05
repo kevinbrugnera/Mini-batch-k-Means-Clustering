@@ -9,12 +9,19 @@ fi
 
 TARGET_SCRIPT=$1
 
-# Define your worker IPs (comma-separated and no spaces)
-export WORKER_IPS="worker_1_ip, worker_2_ip, ..., worker_n_ip"
-MASTER_IP="master_ip"
+# Load IPs from ips.env file
+if [ -f ips.env ]; then
+    echo "Loading variables from ips.env..."
+    set -a         
+    source ips.env    
+    set +a         
+else
+    echo "ERROR: ips.env file not found."
+    exit 1
+fi
 
 #Activate dedicated python enviroment
-source pyvenv/bin/activate
+source ~/pyvenv/bin/activate
 
 # Launch the spark-submit command applied to the target script. Change specs based on resources and run objective
 spark-submit \
