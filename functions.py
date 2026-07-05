@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from kneed import KneeLocator
+from sklearn.metrics import adjusted_mutual_info_score as AMI
+from sklearn.metrics import normalized_mutual_info_score as NMI
 
 # ==========================================
 # METADATA GENERATOR
@@ -33,20 +35,22 @@ def save_metadata(func_name, duration, params, metrics, base_filepath):
 # MATH FUNCTIONS
 # ==========================================
 
-def distance_squared(v1: np.ndarray, v2: np.ndarray) -> float:
-    """Computes the squared Euclidean distance between two dense NumPy arrays."""
-    return float(np.sum((v1 - v2) ** 2))
-
-def get_closest_center_idx(point: np.ndarray, centers: list) -> int:
-    """Finds the index of the closest center for a given point."""
-    distances = [distance_squared(point, c) for c in centers]
+def get_closest_center_idx(point: np.ndarray, centers: np.ndarray) -> int:
+    """Finds the index of the closest center leveraging NumPy broadcasting."""
+    distances = np.sum((centers - point) ** 2, axis=1)
     return int(np.argmin(distances))
 
 def calculate_wcss(rdd_test, centers: list) -> float:
     """Calculates the Within-Cluster Sum of Squares (WCSS) for evaluation."""
+    centers_np = np.array(centers)
+    bc_centers = rdd_test.context.broadcast(centers_np)
+    
     wcss = rdd_test.map(
-        lambda x: distance_squared(x, centers[get_closest_center_idx(x, centers)])
+        # Replaced distance_squared with direct numpy operation for consistency and speed
+        lambda x: float(np.sum((x - bc_centers.value[get_closest_center_idx(x, bc_centers.value)]) ** 2))
     ).sum()
+    
+    bc_centers.destroy()
     return wcss
 
 # ==========================================
@@ -54,51 +58,67 @@ def calculate_wcss(rdd_test, centers: list) -> float:
 # ==========================================
 
 def classic_kmeans(rdd_train, k: int, epochs: int):
-    """Executes the standard K-Means algorithm using dense NumPy arrays."""
-    # Initialize random centers from the dataset
+    """Executes the standard K-Means algorithm using dense NumPy arrays with Spark broadcasting."""
     centers = rdd_train.takeSample(False, k)
     
     for _ in range(epochs):
-        # Map: assign each point to the closest cluster index -> (cluster_idx, (point_array, 1))
-        mapped_points = rdd_train.map(lambda x: (get_closest_center_idx(x, centers), (x, 1)))
+        centers_np = np.array(centers)
+        bc_centers = rdd_train.context.broadcast(centers_np)
         
-        # Reduce: sum the arrays and the counts point-wise -> (cluster_idx, (total_coordinate_sum, population))
+        # Map using the broadcasted variable
+        mapped_points = rdd_train.map(lambda x: (get_closest_center_idx(x, bc_centers.value), (x, 1)))
+        
+        # Reduce
         reduced_points = mapped_points.reduceByKey(lambda a, b: (a[0] + b[0], a[1] + b[1]))
         
-        # Calculate new centers by dividing the summed array by the population count -> (cluster_idx, new_center)
+        # Update centers
         new_centers_rdd = reduced_points.map(lambda x: (x[0], x[1][0] / x[1][1]))
-        
-        # Collect and update the centers list
         new_centers_dict = dict(new_centers_rdd.collect())
+        
+        # Rebuild centers list
         centers = [new_centers_dict.get(i, centers[i]) for i in range(k)]
-    
-    # Returns the fianl list of clusters centers    
+        bc_centers.destroy()
+        
     return centers
 
 def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int):
-    """Executes the Mini-Batch K-Means algorithm using NumPy arrays."""
-    centers = rdd_train.takeSample(False, k)
-    v = np.zeros(k) # Tracks the number of points assigned to each center for learning rate
+    """Executes the Mini-Batch K-Means algorithm distributing the load on Spark workers."""
+    centers_list = rdd_train.takeSample(False, k)
+    centers = np.array(centers_list) 
+    
+    v = np.zeros(k)
+    
+    # Calculate fraction for Spark's .sample()
+    total_count = rdd_train.count()
+    fraction = float(b) / total_count if total_count > 0 else 1.0
     
     for iteration in range(epochs):
-        # Extract the mini-batch
-        M = rdd_train.takeSample(False, b)
+        # Broadcast the centers
+        bc_centers = rdd_train.context.broadcast(centers)
         
-        # Cache closest centers for the batch
-        d = []
-        for x in M:
-            d.append(get_closest_center_idx(x, centers))
+        # Distributed sampling on workers
+        rdd_batch = rdd_train.sample(False, fraction)
+        
+        # Distributed mapping
+        mapped_batch = rdd_batch.map(
+            lambda x: (get_closest_center_idx(x, bc_centers.value), (x, 1))
+        )
+        
+        # Distributed reduction, collecting only the k aggregates
+        reduced_batch = mapped_batch.reduceByKey(
+            lambda a, pt: (a[0] + pt[0], a[1] + pt[1])
+        ).collect()
+        
+        # Local update on the Driver
+        for c_idx, (sum_x, count) in reduced_batch:
+            v[c_idx] += count               
+            eta = count / v[c_idx]          
+            batch_mean = sum_x / count      
+            centers[c_idx] = (centers[c_idx] * (1.0 - eta)) + (batch_mean * eta)
             
-        # Update centers based on the batch
-        for i, x in enumerate(M):
-            c_idx = d[i]                           
-            v[c_idx] += 1                          
-            eta = 1.0 / v[c_idx]                   
-            
-            # Update center with gradient step
-            centers[c_idx] = (centers[c_idx] * (1.0 - eta)) + (x * eta)
-            
-    return centers
+        bc_centers.destroy()
+        
+    return centers.tolist()
 
 # ==========================================
 # GET BEST INITIALIZATION PARAMETERS
@@ -217,10 +237,54 @@ def b_search(rdd_sample, best_k, b_list, epochs, num_iter, raw_csv, stats_csv):
     
     return int(best_b), df_stats
 
-def mini_batch_run(rdd_data, best_k, best_b, num_iter, raw_csv, stats_csv):
+# ==========================================
+# DIAGNOSTIC/ PERFORMANCE EVALUATION
+# ==========================================
+
+def cluster_diagnostic(evaluation_data_path, champion_centers):
+    """
+    Evaluates the Champion Model against the ground truth labels 
+    using Adjusted and Normalized Mutual Information scores.
+    Runs locally (no PySpark).
+    """
+    df_eval = pd.read_parquet(evaluation_data_path)
+    
+    # Convert the centers to a numpy array for the new get_closest_center_idx
+    champion_centers_np = np.array(champion_centers)
+    
+    df_eval['predicted_cluster'] = df_eval['features'].apply(lambda x: get_closest_center_idx(x, champion_centers_np))
+    
+    labels_true = df_eval['true_labels'].tolist()
+    labels_pred = df_eval['predicted_cluster'].tolist()
+    
+    ami_score = AMI(labels_true, labels_pred)
+    nmi_score = NMI(labels_true, labels_pred)
+    evaluated_documents = len(labels_true)
+    
+    sample_size = min(5000, len(df_eval))
+    df_plot = df_eval.sample(n=sample_size, random_state=32).copy()
+    
+    df_plot['AMI_score'] = ami_score
+    df_plot['NMI_score'] = nmi_score
+    
+    plot_file_path = evaluation_data_path.replace("evaluation.parquet", "plot_data.parquet")
+    df_plot.to_parquet(plot_file_path, engine="pyarrow", index=False)
+
+    return ami_score, nmi_score, evaluated_documents
+
+
+# ==========================================
+# FINAL MINI BATCH
+# ==========================================
+
+def mini_batch_run(rdd_data, evaluation_data_path, best_k, best_b, epochs, num_iter, raw_csv, stats_csv):
     """Runs the final comprehensive mini batch k-means using the discovered optimal parameters."""
     start = time.time()
     results = []
+
+    best_wcss = float('inf')
+    best_centers = []
+    best_run_id = -1
     
     for run_id in range(num_iter):
         rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=run_id)
@@ -228,15 +292,17 @@ def mini_batch_run(rdd_data, best_k, best_b, num_iter, raw_csv, stats_csv):
         rdd_test.cache()
         
         start_time = time.time()
-        centers = minibatch_kmeans(rdd_train, best_k, best_b, t=16)
+        centers = minibatch_kmeans(rdd_train, best_k, best_b, epochs)
         exec_time = time.time() - start_time
         
         wcss = calculate_wcss(rdd_test, centers)
+
+        if wcss < best_wcss:
+            best_wcss = wcss
+            best_centers = centers
+            best_run_id = run_id
         
-        # Calculate cluster populations for structural validation -> (cluster_idx, population)
-        population_dict = rdd_test.map(lambda x: (get_closest_center_idx(x, centers), 1)) \
-                                  .reduceByKey(lambda a, b: a + b) \
-                                  .collectAsMap()
+
         
         results.append({
             'iteration_id': run_id,
@@ -244,7 +310,6 @@ def mini_batch_run(rdd_data, best_k, best_b, num_iter, raw_csv, stats_csv):
             'batch_size': best_b,
             'execution_time_sec': exec_time,
             'performance_wcss': wcss,
-            'cluster_population': str(population_dict)
         })
         
         rdd_train.unpersist()
@@ -253,24 +318,39 @@ def mini_batch_run(rdd_data, best_k, best_b, num_iter, raw_csv, stats_csv):
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
     
-    # Generate summary statistics
-    df_stats = df_results.agg(
-        mean_wcss=('performance_wcss', 'mean'),
-        std_wcss=('performance_wcss', 'std'),
-        mean_time=('execution_time_sec', 'mean'),
-        std_time=('execution_time_sec', 'std')
-    )
+    best_centers_check = [c.tolist() if isinstance(c, np.ndarray) else c for c in best_centers]
+
+    stats_dict = {
+        'mean_wcss': df_results['performance_wcss'].mean(),
+        'std_wcss': df_results['performance_wcss'].std(),
+        'mean_time': df_results['execution_time_sec'].mean(),
+        'std_time': df_results['execution_time_sec'].std(),
+        'champion_run_id': best_run_id,
+        'champion_wcss': best_wcss,
+        'best_centroids': json.dumps(best_centers_check) 
+    }
     
+    df_stats = pd.DataFrame([stats_dict])
     df_stats.to_csv(stats_csv, index=False)
 
+
+    print("\n" + "="*40)
+    print("PERFORMANCE DIAGNOSTIC")
+    print("="*40)
+    ami_score, nmi_score, evaluated_documents = cluster_diagnostic(evaluation_data_path, best_centers)
+    print(f'AMI Score: {ami_score}, \nNMI Score: {nmi_score}, \nDiagnostic on {evaluated_documents} Documents')
+
     duration = time.time() - start
-    
-    # Metadata
+
     save_metadata(
-        func_name="final_benchmark",
-        duration= f'{duration} (s)',
-        params={"best_k": best_k, "best_b": best_b, "iterations": num_iter},
-        metrics={"status": "Success"},
+        func_name="mini_batch_run",
+        duration= f"{duration} (s)",
+        params={"best_k": best_k, "best_b": best_b, "epochs": epochs, "iterations": num_iter},
+        metrics={"champion_run_id": best_run_id,
+            "champion_wcss": best_wcss,
+            "champion_centers": best_centers_check,
+            "AMI Score" : ami_score,
+            "NMI Score" : nmi_score},
         base_filepath=raw_csv
     )
     

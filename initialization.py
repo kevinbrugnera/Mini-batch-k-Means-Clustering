@@ -32,27 +32,51 @@ B_STATS_CSV = os.path.join(DATA_DIR, "b_search_stats.csv")
 PARAMS_CSV = os.path.join(DATA_DIR, "best_params.csv")
 
 # Updated Path pointing to the dense parquet
-PARQUET_PATH = os.path.join(DATA_DIR, "rcv1.parquet")
+PARQUET_PATH = os.path.join(DATA_DIR, "rcv1_dataset.parquet")
 
 start = time.time()
 if __name__ == "__main__":
     if not os.path.exists(PARQUET_PATH):
         raise FileNotFoundError(f"Missing {PARQUET_PATH}. Please run generate_data.py first.")
 
-    spark = SparkSession.builder \
-        .appName("RCV1-Initialization-Diagnostics") \
-        .master("local[4]") \
-        .config("spark.driver.memory", "4g") \
-        .getOrCreate()
+    # Environment check for the SparkSession
+    worker_ips_str = os.getenv("WORKER_IPS", "")
+    
+    print("\n" + "="*40)
+    if worker_ips_str:
+        print("[INFO] YOU'RE ON A CLUSTER.")
+        print("[INFO] Creating SParkSession with run_cluster.sh specs...")
         
+        # Specs inside the running script
+        spark = SparkSession.builder \
+            .appName("Grid-Search") \
+            .getOrCreate()
+    else:
+        print("[WARN] YOU'RE IN A LOCAL ENVIROMENT.")
+        print("[WARN] Using specified configuration: master='local[*]', driver_memory='whatever'.")
+        print("[WARN] You can modify these settings directly in the script if needed.")
+        print("[TIP] Did you mean to run this on a cluster?")
+        print("      To distribute data automatically, you must define the worker nodes.")
+        print("      Stop this script, open your terminal, activate your conda environment")
+        print("      and run the following command with your actual IPs before executing:")
+        print('      export WORKER_IPS="worker_1_ip,worker_2_ip,...,worker_n_ip".')
+        
+        # Local configuration: set number of workers (local[*]) and memory desired
+        spark = SparkSession.builder \
+            .appName("Grid-Search") \
+            .master("local[*]") \
+            .config("spark.driver.memory", "512mb") \
+            .getOrCreate()
+            
     spark.sparkContext.setLogLevel("ERROR")
+    print("="*40 + "\n")
     
-    print(f"Loading a sample of {SAMPLE_SIZE} dense documents from Parquet...")
+    print(f"Loading a sample of {SAMPLE_SIZE} documents from .parquet Dataset...")
     
-    # Read the parquet directly. PyArrow saves it as an ArrayType of floats natively
+    # Read the parquet directly
     df_sample = spark.read.parquet(PARQUET_PATH).limit(SAMPLE_SIZE)
     
-    # Map each row to a dense numpy array of float32 for fast computation
+    # Map each row to a dense numpy array of float32
     rdd_sample = df_sample.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
 
     # --- Phase 1: Optimal K ---

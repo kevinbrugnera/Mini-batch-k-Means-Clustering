@@ -12,7 +12,8 @@ from pyspark.sql import SparkSession
 from functions import mini_batch_run
 
 # Global Variables
-N_ITER = 20                 # Iteration for statistics
+NUM_ITER = 20                 # Iteration for statistics
+EPOCHS = 15                 # Training steps
 RUN_IDENTIFIER = "change for every run with specifics to facilitate understanding" 
 
 # Directory setup
@@ -25,34 +26,60 @@ FINAL_STATS_CSV = os.path.join(DATA_DIR, f"stats_{RUN_IDENTIFIER}.csv")
 PARAMS_CSV = os.path.join(DATA_DIR, "best_params.csv")
 
 # Updated Path pointing to the dense parquet
-PARQUET_PATH = os.path.join(DATA_DIR, "rcv1.parquet")
+DATASET_PATH = os.path.join(DATA_DIR, "rcv1_dataset.parquet")
+EVALUATION_PATH = os.path.join(DATA_DIR, "evaluation.parquet")
 
 if __name__ == "__main__":
     
     # Verify existence of required upstream files
     if not os.path.exists(PARAMS_CSV):
         raise FileNotFoundError(f"Missing {PARAMS_CSV}. Please run initialization.py first.")
-    if not os.path.exists(PARQUET_PATH):
-        raise FileNotFoundError(f"Missing {PARQUET_PATH}. Please run generate_data.py first.")
+    if not os.path.exists(DATASET_PATH):
+        raise FileNotFoundError(f"Missing {DATASET_PATH}. Please run generate_data.py first.")
+    if not os.path.exists(EVALUATION_PATH): 
+        raise FileNotFoundError(f"Missing {EVALUATION_PATH}. Please run generate_data.py first.")
         
     # Load optimal parameters found during the initialization step
     params_df = pd.read_csv(PARAMS_CSV)
     best_k = int(params_df['best_k'].iloc[0])
     best_b = int(params_df['best_b'].iloc[0])
 
-    # Instantiate Spark Session leveraging logical cores
-    spark = SparkSession.builder \
-        .appName(f"RCV1-MiniBatch-{RUN_IDENTIFIER}") \
-        .master("local[*]") \
-        .config("spark.driver.memory", "4g") \
-        .getOrCreate()
+    # Environment check for the SparkSession
+    worker_ips_str = os.getenv("WORKER_IPS", "")
+    
+    print("\n" + "="*40)
+    if worker_ips_str:
+        print("[INFO] YOU'RE ON A CLUSTER.")
+        print("[INFO] Creating SParkSession with run_cluster.sh specs...")
         
+        # Specs inside the running script
+        spark = SparkSession.builder \
+            .appName(f"MiniBatch_{RUN_IDENTIFIER}") \
+            .getOrCreate()
+    else:
+        print("[WARN] YOU'RE IN A LOCAL ENVIROMENT.")
+        print("[WARN] Using specified configuration: master='local[*]', driver_memory='whatever'.")
+        print("[WARN] You can modify these settings directly in the script if needed.")
+        print("[TIP] Did you mean to run this on a cluster?")
+        print("      To distribute data automatically, you must define the worker nodes.")
+        print("      Stop this script, open your terminal, activate your conda environment")
+        print("      and run the following command with your actual IPs before executing:")
+        print('      export WORKER_IPS="worker_1_ip, worker_2_ip, ..., worker_n_ip".')
+        
+        # Local configuration: set number of workers (local[*]) and memory desired
+        spark = SparkSession.builder \
+            .appName(f"MiniBatch_{RUN_IDENTIFIER}") \
+            .master("local[*]") \
+            .config("spark.driver.memory", "512mb") \
+            .getOrCreate()
+            
     spark.sparkContext.setLogLevel("ERROR")
+    print("="*40 + "\n")
     
     print(f"Loading full RCV1 Parquet Dataset...")
     
     # Read dataset
-    df = spark.read.parquet(PARQUET_PATH)
+    df = spark.read.parquet(DATASET_PATH)
     
     # Map rows into float32 arrays
     rdd_data = df.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
@@ -62,7 +89,8 @@ if __name__ == "__main__":
     
     print(f"\n=========================================")
     print(f"Dataset Size      : {dataset_size} documents")
-    print(f"Iterations : {N_ITER}")
+    print(f"Iterations : {NUM_ITER}")
+    print(f"Epochs            : {EPOCHS}")
     print(f"Loaded Optimal K  : {best_k}")
     print(f"Loaded Optimal b  : {best_b}")
     print(f"=========================================\n")
@@ -72,7 +100,8 @@ if __name__ == "__main__":
         rdd_data=rdd_data,
         best_k=best_k,
         best_b=best_b,
-        n_iter=N_ITER,
+        epochs=EPOCHS,                       
+        num_iter=NUM_ITER,
         raw_csv=FINAL_RAW_CSV,
         stats_csv=FINAL_STATS_CSV
     )
