@@ -15,24 +15,25 @@ import numpy as np
 import json
 from datetime import datetime
 from pyspark.sql import SparkSession
-from functions import k_search, b_search
+from functions import b_search
 
 # Global Variables
-NUM_ITERATIONS = 100                # Iterations for statistics
-EPOCHS = 20                         # Training step for single k-means run
-K_RANGE = [2,4,6,8,10]       # K values to test
+NUM_ITERATIONS = 50                # Iterations for statistics
+K = 4
+#EPOCHS = 20                         # Training step for single k-means run
+#K_RANGE = [2,4,6,8,10]       # K values to test
 B_RANGE = [50,250,500,1000,1500,2000,2500,3000,4000,5000]                    # b values to test
-SAMPLE_SIZE = 100000                  # Sample of RCV1 dataset to analyze
+SAMPLE_SIZE = 50000                  # Sample of RCV1 dataset to analyze
 
 # Directory setup
 os.makedirs("data", exist_ok=True)
 
 # Output Paths
-K_RAW_CSV = "data/k_search_raw.csv"
-K_STATS_CSV = "data/k_search_stats.csv"
+#K_RAW_CSV = "data/k_search_raw.csv"
+#K_STATS_CSV = "data/k_search_stats.csv"
 B_RAW_CSV = "data/b_search_raw.csv"
 B_STATS_CSV = "data/b_search_stats.csv"
-PARAMS_CSV = "data/best_params.csv"
+PARAMS_CSV = "data/best_b.csv"
 
 # Updated Path pointing to the dense parquet
 PARQUET_PATH = "data/rcv1_dataset"
@@ -47,22 +48,24 @@ if __name__ == "__main__":
     
     print("\n" + "="*40)
     if worker_ips_str:
+
         print("[INFO] YOU'RE ON A CLUSTER.")
-        print("[INFO] Creating SParkSession with run_cluster.sh specs...")
+        print("       Creating SparkSession with run_cluster.sh specs...")
+        
         
         # Specs inside the running script
         spark = SparkSession.builder \
             .appName("Grid-Search") \
             .getOrCreate()
     else:
-        print("[WARN] YOU'RE IN A LOCAL ENVIROMENT.")
-        print("[WARN] Using specified configuration: master='local[*]', driver_memory='whatever'.")
-        print("[WARN] You can modify these settings directly in the script if needed.")
-        print("[TIP] Did you mean to run this on a cluster?")
-        print("      To distribute data automatically, you must define the worker nodes.")
-        print("      Stop this script, open your terminal, activate your conda environment")
-        print("      and run the following command with your actual IPs before executing:")
-        print('      export WORKER_IPS="worker_1_ip,worker_2_ip,...,worker_n_ip".')
+
+        print("[INFO] YOU'RE IN A LOCAL ENVIROMENT.")
+        print("       Using configurationin specified in <initialization.py> at line 69-73.")
+        print("       Modify it accordingly to your needs.")
+        print("-" * 40)
+        print("[WARN] You are indeed on a cluster? Don't worry!")
+        print("       You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
+        print("       If you have any doubts, follow the instructions at instructions.pdf")
         
         # Local configuration: set number of workers (local[*]) and memory desired
         spark = SparkSession.builder \
@@ -78,29 +81,34 @@ if __name__ == "__main__":
     
     # Read the parquet directly
     df_full = spark.read.parquet(PARQUET_PATH)
+
+    #We will read only approximately SAMPLE_SIZE documents
+    # not exactly that number since we are sampling with sample function
     total_docs = df_full.count()
     fraction = min(1.0, SAMPLE_SIZE / total_docs)   
-    df_sample = df_full.sample(False, fraction, seed=28).repartition(24)
+    df_sample = df_full.sample(False, fraction, seed=28)
     
     # Map each row to a dense numpy array of float32
     rdd_sample = df_sample.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
 
-    # --- Phase 1: Optimal K ---
+    '''
+    # Optimal K
     print("\n[1/2] Search for Optimal K...")
     best_k, k_stats = k_search(
         rdd_sample, K_RANGE, EPOCHS, NUM_ITERATIONS, K_RAW_CSV, K_STATS_CSV
     )
     print(f"Optimal K found: {best_k}")
+    '''
 
-    # --- Phase 2: Optimal Batch Size (b) ---
-    print(f"\n[2/2] Search for Optimal Batch Size (b) with Best K={best_k}...")
+    #  Optimal Batch Size b
+    print(f"\nSearch for Optimal Batch Size with K={K}...")
     best_b, b_stats = b_search(
-        rdd_sample, best_k, B_RANGE, SAMPLE_SIZE, NUM_ITERATIONS, B_RAW_CSV, B_STATS_CSV
+        rdd_sample, K, B_RANGE, SAMPLE_SIZE, NUM_ITERATIONS, B_RAW_CSV, B_STATS_CSV
     )
-    print(f"Optimal Batch Size (b) found: {best_b}")
+    print(f"Optimal Batch Size found: {best_b}")
 
-    # Save Parameters
-    params_df = pd.DataFrame([{'best_k': best_k, 'best_b': best_b}])
+    # Save best b in dedicated file (little overkill but helpful)
+    params_df = pd.DataFrame([{ 'best_b': best_b}])
     params_df.to_csv(PARAMS_CSV, index=False)
     
     duration = time.time() - start
@@ -111,7 +119,7 @@ if __name__ == "__main__":
                 "script": "initialization.py",
                 "duration": f'{duration} (s)',
             },
-            "optimal_parameters_found": {"best_k": int(best_k), "best_b": int(best_b)},
+            "optimal_parameters_found": {"best_b": int(best_b)},
         }, f, indent=4)
     
     print(f"\nInitialization complete!")

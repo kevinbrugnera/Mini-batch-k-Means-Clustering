@@ -7,10 +7,7 @@ from datetime import datetime
 from kneed import KneeLocator
 from sklearn.metrics import adjusted_mutual_info_score as AMI
 from sklearn.metrics import normalized_mutual_info_score as NMI
-from pyspark.sql import Row
 from pyspark.ml.linalg import Vectors
-from pyspark.sql.types import StructType, StructField, IntegerType
-from pyspark.ml.linalg import VectorUDT
 from pyspark.ml.evaluation import ClusteringEvaluator
 
 # ==========================================
@@ -66,18 +63,12 @@ def spark_silhouette_score(rdd_test, centers):
     bc_centers = rdd_test.context.broadcast(centers_np)
     
     # elper function to map feature and prediction labels in MLlib reuqested format
-    def map_to_row(x):
+    def map_to_tuple(x):
         c_idx = get_closest_center_idx(x, bc_centers.value)
-        return Row(features=Vectors.dense(x), prediction=int(c_idx))
+        return (Vectors.dense(x), int(c_idx))
     
-    schema = StructType([
-        StructField("features", VectorUDT(), False),
-        StructField("prediction", IntegerType(), False)
-    ])
-    
-    # Convert rdd into dataframe using defined schema
-    mapped_rdd = rdd_test.map(map_to_row)
-    predictions_df = mapped_rdd.toDF(schema=schema)   
+    #Creates predicition DataFrame
+    predictions_df = rdd_test.map(map_to_tuple).toDF(["features", "prediction"]) 
     
     # Use pyspark evaluator to compute silhouette score
     evaluator = ClusteringEvaluator(
@@ -131,7 +122,7 @@ def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int):
     total_count = rdd_train.count()
     fraction = float(b) / total_count if total_count > 0 else 1.0
     
-    for iteration in range(epochs):
+    for epoch in range(epochs):
         # Broadcast the centers
         bc_centers = rdd_train.context.broadcast(centers)
         
@@ -163,6 +154,7 @@ def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int):
 # GET BEST INITIALIZATION PARAMETERS
 # ==========================================
 
+'''
 def k_search(rdd_sample, k_list, epochs, num_iter, raw_csv, stats_csv):
     """Grid Search to find best K parameter among list of values."""
     start_time = time.time()
@@ -225,6 +217,7 @@ def k_search(rdd_sample, k_list, epochs, num_iter, raw_csv, stats_csv):
     print("Done!")
 
     return optimal_k, df_stats
+'''
 
 def b_search(rdd_sample, best_k, b_list, docs_volume, num_iter, raw_csv, stats_csv):
     """Grid Search to find best b parameter among list of values."""
@@ -343,7 +336,7 @@ def cluster_diagnostic(evaluation_data_path, champion_centers):
 # FINAL MINI BATCH
 # ==========================================
 
-def mini_batch_run(rdd_data, evaluation_data_path, best_k, best_b, epochs, num_iter, raw_csv, stats_csv):
+def mini_batch_run(rdd_data, evaluation_data_path, k, best_b, epochs, num_iter, raw_csv, stats_csv):
     """Runs the final comprehensive mini batch k-means using the discovered optimal parameters."""
     start = time.time()
     results = []
@@ -353,16 +346,17 @@ def mini_batch_run(rdd_data, evaluation_data_path, best_k, best_b, epochs, num_i
     best_run_id = -1
     
     for run_id in range(num_iter):
+        print(f"MiniBatch K-means, {epochs} epochs -- Iteration: {run_id}")
         rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=run_id)
-        rdd_train.cache()
-        rdd_test.cache()
+        rdd_train.persist()
+        rdd_test.persist()
         
         # Actions to trigger the cache on worker's RAM
         train_size = rdd_train.count() 
         test_size = rdd_test.count()
         
         start_time = time.time()
-        centers = minibatch_kmeans(rdd_train, best_k, best_b, epochs)
+        centers = minibatch_kmeans(rdd_train, k, best_b, epochs)
         exec_time = time.time() - start_time
         
         wcss = calculate_wcss(rdd_test, centers)
@@ -376,7 +370,7 @@ def mini_batch_run(rdd_data, evaluation_data_path, best_k, best_b, epochs, num_i
         
         results.append({
             'iteration_id': run_id,
-            'k_value': best_k,
+            'k_value': k,
             'batch_size': best_b,
             'execution_time_sec': exec_time,
             'performance_wcss': wcss,
@@ -406,16 +400,18 @@ def mini_batch_run(rdd_data, evaluation_data_path, best_k, best_b, epochs, num_i
 
     print("\n" + "="*40)
     print("PERFORMANCE DIAGNOSTIC")
-    print("="*40)
+
     ami_score, nmi_score, evaluated_documents = cluster_diagnostic(evaluation_data_path, best_centers)
+    
     print(f'AMI Score: {ami_score}, \nNMI Score: {nmi_score}, \nDiagnostic on {evaluated_documents} Documents')
+    print("="*40 + "\n")
 
     duration = time.time() - start
 
     save_metadata(
         func_name="mini_batch_run",
         duration= f"{duration} (s)",
-        params={"best_k": best_k, "best_b": best_b, "epochs": epochs, "iterations": num_iter},
+        params={"best_k": k, "best_b": best_b, "epochs": epochs, "iterations": num_iter},
         metrics={"champion_run_id": best_run_id,
             "champion_wcss": best_wcss,
             "champion_centers": best_centers_check,

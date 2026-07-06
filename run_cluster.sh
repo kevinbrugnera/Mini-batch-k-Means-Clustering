@@ -18,14 +18,17 @@ if [ -f ips.env ]; then
 
 fi
 
-#Activate dedicated python enviroment
-source ~/pyvenv/bin/activate
+#Activate dedicated python enviroment in case it is not already activated
+source pyvenv/bin/activate
 
 # Launch the spark-submit command applied to the target script. Change specs based on resources and run objective
+NUM_PARTITIONS=12
+
 spark-submit \
   --master spark://$MASTER_IP:7077 \
   --executor-memory 1G \
   --total-executor-cores 6 \
   --executor-cores 2 \
+  --conf spark.default.parallelism=12 \
   --py-files functions.py \
   $TARGET_SCRIPT

@@ -123,9 +123,9 @@ def distribute_generated_data():
         print("\n" + "="*40)
         print("\n[INFO] YOU'RE IN A LOCAL ENVIROMENT -> No data distribution required :)\n")
         print("-" * 40)
-        print("[P.S] You are indeed on a cluster? Don't worry!")
-        print("      You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
-        print("      If you have any doubts, follow the instructions at instructions.pdf")
+        print("[WARN] You are indeed on a cluster? Don't worry!")
+        print("       You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
+        print("       If you have any doubts, follow the instructions at instructions.pdf")
         print("="*40 + "\n")
         return
 
@@ -145,8 +145,9 @@ def distribute_generated_data():
 
     
     print("\n" + "="*40)
-    print(f"YOU'RE ON A CLUSTER WITH ({len(workers)} WORKERS)")
-    print(f"Starting files distribution...")
+    print(f"[INFO] YOU'RE ON A CLUSTER WITH ({len(workers)} WORKERS.")
+    print(f"       Starting files distribution...")
+    print("="*40 + "\n")
     
     for i, ip in enumerate(workers):
         print(f'-> Transferring data to worker {i+1}: {ip}...')

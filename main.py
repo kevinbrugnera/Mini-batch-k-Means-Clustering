@@ -16,8 +16,9 @@ from pyspark.sql import SparkSession
 from functions import mini_batch_run
 
 # Global Variables
-NUM_ITER = 20                 # Iteration for statistics
-EPOCHS = 15                 # Training steps
+K = 4
+NUM_ITER = 50                 # Iteration for statistics
+EPOCHS = 20                 # Training steps
 RUN_IDENTIFIER = "change for every run with specifics to facilitate understanding" 
 
 # Directory setup
@@ -46,30 +47,31 @@ if __name__ == "__main__":
         
     # Load optimal parameters found during the initialization step
     params_df = pd.read_csv(PARAMS_CSV)
-    best_k = int(params_df['best_k'].iloc[0])
-    best_b = int(params_df['best_b'].iloc[0])
+    #best_k = int(params_df['best_k'].iloc[0])
+    batch_size = int(params_df['best_b'].iloc[0])
 
     # Environment check for the SparkSession
     worker_ips_str = os.getenv("WORKER_IPS", "")
     
     print("\n" + "="*40)
     if worker_ips_str:
+
         print("[INFO] YOU'RE ON A CLUSTER.")
-        print("[INFO] Creating SParkSession with run_cluster.sh specs...")
+        print("       Creating SParkSession with run_cluster.sh specs...")
         
         # Specs inside the running script
         spark = SparkSession.builder \
             .appName(f"MiniBatch_{RUN_IDENTIFIER}") \
             .getOrCreate()
     else:
-        print("[WARN] YOU'RE IN A LOCAL ENVIROMENT.")
-        print("[WARN] Using specified configuration: master='local[*]', driver_memory='whatever'.")
-        print("[WARN] You can modify these settings directly in the script if needed.")
-        print("[TIP] Did you mean to run this on a cluster?")
-        print("      To distribute data automatically, you must define the worker nodes.")
-        print("      Stop this script, open your terminal, activate your conda environment")
-        print("      and run the following command with your actual IPs before executing:")
-        print('      export WORKER_IPS="worker_1_ip, worker_2_ip, ..., worker_n_ip".')
+
+        print("[INFO] YOU'RE IN A LOCAL ENVIROMENT.")
+        print("       Using configurationin specified in <main.py> at line 69-73.")
+        print("       Modify it accordingly to your needs.")
+        print("-" * 40)
+        print("[WARN] You are indeed on a cluster? Don't worry!")
+        print("       You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
+        print("       If you have any doubts, follow the instructions at instructions.pdf")
         
         # Local configuration: set number of workers (local[*]) and memory desired
         spark = SparkSession.builder \
@@ -93,18 +95,17 @@ if __name__ == "__main__":
     dataset_size = rdd_data.count()
     
     print(f"\n=========================================")
-    print(f"Dataset Size      : {dataset_size} documents")
-    print(f"Iterations : {NUM_ITER}")
-    print(f"Epochs            : {EPOCHS}")
-    print(f"Loaded Optimal K  : {best_k}")
-    print(f"Loaded Optimal b  : {best_b}")
+    print(f"Dataset Size: {dataset_size} documents")
+    print(f"Iterations  : {NUM_ITER}")
+    print(f"Epochs      : {EPOCHS}")
+    print(f"Batch Size  : {batch_size}")
     print(f"=========================================\n")
     
     # Execute the core final benchmark
     stats_df = mini_batch_run(
         rdd_data=rdd_data,
-        best_k=best_k,
-        best_b=best_b,
+        best_k= K,
+        best_b=batch_size,
         epochs=EPOCHS,                       
         num_iter=NUM_ITER,
         raw_csv=FINAL_RAW_CSV,
