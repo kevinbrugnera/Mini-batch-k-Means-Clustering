@@ -108,7 +108,7 @@ def generate_data():
 # DISTRIBUTE FILES ON WORKERS
 # ==========================================
 
-def distribute_generated_data(data_dir="data"):
+def distribute_generated_data():
     """
     Checks if the script is running on a cluster environment.
     If the WORKER_IPS environment variable is detected, it automatically 
@@ -123,20 +123,25 @@ def distribute_generated_data(data_dir="data"):
         print("\n" + "="*40)
         print("\n[INFO] YOU'RE IN A LOCAL ENVIROMENT -> No data distribution required :)\n")
         print("-" * 40)
-        print("[TIP] Did you mean to run this on a cluster?")
-        print("      To distribute data automatically, you must define the worker nodes.")
-        print("      Stop this script, open your terminal, activate your conda environment")
-        print("      and run the following command with your actual IPs before executing:")
-        print('      export WORKER_IPS="worker_1_ip, worker_2_ip, ..., worker_n_ip".')
+        print("[P.S] You are indeed on a cluster? Don't worry!")
+        print("      You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
+        print("      If you have any doubts, follow the instructions at instructions.pdf")
         print("="*40 + "\n")
         return
 
     # Parse the IP addresses, removing any accidental spaces
     workers = [ip.strip() for ip in worker_ips_str.split(",") if ip.strip()]
+    master_user = getpass.getuser()
+
+    #Takes workers user from ips.env file
+    worker_user = os.getenv("WORKER_USER", master_user)
+
+    #Takes absolute path of current directory on the master's node
+    abs_path = os.getcwd()
     
     # State worker user (always ubuntu on cloudveneto I think) and data path
-    remote_user = "ubuntu"
-    remote_project_path = "~/Project"
+    #remote_user = "ubuntu"
+    #remote_project_path = "~/Project"
 
     
     print("\n" + "="*40)
@@ -148,6 +153,7 @@ def distribute_generated_data(data_dir="data"):
 
         #In order for the rest of the code to work the data has to be in home/ubuntu/Project/data/...
         # So we create the dedicated directory in every worker specified
+        '''
         create_dir_command = [
             "ssh", 
             "-o", "StrictHostKeyChecking=no", 
@@ -155,6 +161,7 @@ def distribute_generated_data(data_dir="data"):
             "-q",
             f"{remote_user}@{ip}", "mkdir -p ~/Project"]
         subprocess.run(create_dir_command, check=True)
+        '''
 
         #With thi command we copy the data directory inside the newly created Project one
         scp_command = [
@@ -163,7 +170,7 @@ def distribute_generated_data(data_dir="data"):
             "-o", "BatchMode=yes",
             "-q",
             "-r", "data/",
-            f"{remote_user}@{ip}:{remote_project_path}"]
+            f"{worker_user}@{ip}:{abs_path}"]
 
         try:
             # Execute and raise value if something is wrong
@@ -186,4 +193,4 @@ if __name__ == "__main__":
     generate_data()
     
     # Distributes file right after their creation on Master Node
-    distribute_generated_data(data_dir="data")
+    distribute_generated_data()
