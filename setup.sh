@@ -15,7 +15,8 @@ if [ -f "packages.txt" ]; then
     echo "Installing dependencies..."
     ./pyvenv/bin/pip install -r packages.txt
 else
-    echo "[WARNING] packages.txt not found! Skipped packages installation."
+    echo "[WARNING] packages.txt not found! Please make sure to have it."
+    exit 0
 fi
 
 # Cluster or Local check. If WORKER_IPS="" then we are in local otherwise on cluster
