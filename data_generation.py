@@ -15,22 +15,22 @@ load_dotenv("ips.env")       # Load .env file containing IP addresses
 import pandas as pd
 from sklearn.datasets import fetch_rcv1
 from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import normalize
 
 # ==========================================
 # GENERATE .parquet DATASET AND .parquet EVALUATION FILE
 # ==========================================
 
 def generate_data():
-    print("Fetching RCV1 dataset...")
+    print("Processing RCV1 dataset...")
     rcv1 = fetch_rcv1()
     
-    print("Extracting MACRO true labels...")
+    # Extract true macrolabels
     target_names = rcv1.target_names
     macro_labels = ['CCAT', 'ECAT', 'GCAT', 'MCAT']
     
     # Saves the index identifying the macro labels (if 'CCAT' is at index 10 is stored as 10: 'CCAT')
     macro_indices = {np.where(target_names == cat)[0][0]: cat for cat in macro_labels}
-    
     targets_csr = rcv1.target
     macro_labels_list = []
     
@@ -42,14 +42,15 @@ def generate_data():
         macros_for_doc = [macro_indices[idx] for idx in row_indices if idx in macro_indices]
         macro_labels_list.append(macros_for_doc)
 
-    print("Sub-sampling for Truncated SVD fitting to avoid Memory Overload...")
-    # Use only 150000 documents sampled randomly, should be a good statical representation of the dataset
+    print("Truncated SVD Transformation...")
+    # Use a decent sample of documents extarcted randomly, to avoid memory usage overload
+    # 50000 to 100000 documents should be enough to estimate good fitting parameters
     np.random.seed(42)
     sample_idx = np.random.choice(rcv1.data.shape[0], size=50000, replace=False)
     sorted_idx = np.sort(sample_idx)
     X_sample = rcv1.data[sorted_idx]
 
-    print("Fitting Truncated SVD (reduction to 100 latent dimensions)...")
+    # Reduce to 100 latent dimensions
     svd = TruncatedSVD(n_components=100, random_state=16)
     svd.fit(X_sample)
     
@@ -71,14 +72,15 @@ def generate_data():
         end_idx = min(start_idx + batch_size, n_docs)
         print(f"  -> Processing and saving chunk {start_idx} to {end_idx} / {n_docs}")
         
-        # Transofmration
+        # Transofmration and normalization to avoid wrong clustering
         X_batch = rcv1.data[start_idx:end_idx]
         X_dense_batch = svd.transform(X_batch)
+        X_normalized_batch = normalize(X_dense_batch, norm='l2', axis=1)
         Y_batch = macro_labels_list[start_idx:end_idx]
         
         # Temporary DataFrame to store data
         df_chunk = pd.DataFrame({
-            'features': list(X_dense_batch),
+            'features': list(X_normalized_batch),
             'true_labels': Y_batch
         })
         
@@ -112,7 +114,8 @@ def distribute_generated_data(data_dir="data"):
     If the WORKER_IPS environment variable is detected, it automatically 
     distributes the newly generated Parquet files to all worker nodes.
     """
-    # Fetch the worker IPs from the environment variables
+    # Fetch the worker IPs from the environment variables.
+    # Uses ips.env file with IPs storend inside thnaks to load_dotenv()
     worker_ips_str = os.getenv("WORKER_IPS", "")
     
     # If the variable is empty or missing, assume local execution
@@ -130,8 +133,6 @@ def distribute_generated_data(data_dir="data"):
 
     # Parse the IP addresses, removing any accidental spaces
     workers = [ip.strip() for ip in worker_ips_str.split(",") if ip.strip()]
-    for i, ip in enumerate(workers):
-        print(f'Worker {i} IP: {ip}')
     
     # State worker user (always ubuntu on cloudveneto I think) and data path
     remote_user = "ubuntu"
@@ -142,10 +143,11 @@ def distribute_generated_data(data_dir="data"):
     print(f"YOU'RE ON A CLUSTER WITH ({len(workers)} WORKERS)")
     print(f"Starting files distribution...")
     
-    for ip in workers:
-        print(f'-> Transferring data to {ip}...')
+    for i, ip in enumerate(workers):
+        print(f'-> Transferring data to worker {i+1}: {ip}...')
 
         #In order for the rest of the code to work the data has to be in home/ubuntu/Project/data/...
+        # So we create the dedicated directory in every worker specified
         create_dir_command = [
             "ssh", 
             "-o", "StrictHostKeyChecking=no", 
@@ -154,6 +156,7 @@ def distribute_generated_data(data_dir="data"):
             f"{remote_user}@{ip}", "mkdir -p ~/Project"]
         subprocess.run(create_dir_command, check=True)
 
+        #With thi command we copy the data directory inside the newly created Project one
         scp_command = [
             "scp",
             "-o", "StrictHostKeyChecking=no",
@@ -163,7 +166,7 @@ def distribute_generated_data(data_dir="data"):
             f"{remote_user}@{ip}:{remote_project_path}"]
 
         try:
-            # Esegue il comando di sistema
+            # Execute and raise value if something is wrong
             subprocess.run(scp_command, check=True)
             print(f"Successful Data Transfer on {ip}!")
         except subprocess.CalledProcessError:

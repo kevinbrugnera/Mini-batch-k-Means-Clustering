@@ -7,6 +7,11 @@ from datetime import datetime
 from kneed import KneeLocator
 from sklearn.metrics import adjusted_mutual_info_score as AMI
 from sklearn.metrics import normalized_mutual_info_score as NMI
+from pyspark.sql import Row
+from pyspark.ml.linalg import Vectors
+from pyspark.sql.types import StructType, StructField, IntegerType
+from pyspark.ml.linalg import VectorUDT
+from pyspark.ml.evaluation import ClusteringEvaluator
 
 # ==========================================
 # METADATA GENERATOR
@@ -52,6 +57,40 @@ def calculate_wcss(rdd_test, centers: list) -> float:
     
     bc_centers.destroy()
     return wcss
+
+def spark_silhouette_score(rdd_test, centers):
+    """
+    Evaluate Silhouette Score using pySpark implementation.
+    """
+    centers_np = np.array(centers)
+    bc_centers = rdd_test.context.broadcast(centers_np)
+    
+    # elper function to map feature and prediction labels in MLlib reuqested format
+    def map_to_row(x):
+        c_idx = get_closest_center_idx(x, bc_centers.value)
+        return Row(features=Vectors.dense(x), prediction=int(c_idx))
+    
+    schema = StructType([
+        StructField("features", VectorUDT(), False),
+        StructField("prediction", IntegerType(), False)
+    ])
+    
+    # Convert rdd into dataframe using defined schema
+    mapped_rdd = rdd_test.map(map_to_row)
+    predictions_df = mapped_rdd.toDF(schema=schema)   
+    
+    # Use pyspark evaluator to compute silhouette score
+    evaluator = ClusteringEvaluator(
+        predictionCol="prediction", 
+        featuresCol="features", 
+        metricName="silhouette", 
+        distanceMeasure="squaredEuclidean"
+    )
+    
+    score = evaluator.evaluate(predictions_df)
+    
+    bc_centers.destroy()
+    return score
 
 # ==========================================
 # CLUSTERING ALGORITHMS
@@ -135,14 +174,24 @@ def k_search(rdd_sample, k_list, epochs, num_iter, raw_csv, stats_csv):
         rdd_train.cache()
         rdd_test.cache()
 
+        # Actions to trigger the cache on worker's RAM
+        train_size = rdd_train.count() 
+        test_size = rdd_test.count()
+
         for k in k_list:
+            # Sanity check
+            if k < 2:
+                print(f'K={k} will have Silhouette Score -1. This metric requires at least two clusters.' )
+                continue
+
+            print(f'Testing K={k}, iteration:{run_id}')
             centers = classic_kmeans(rdd_train, k, epochs)
-            wcss = calculate_wcss(rdd_test, centers)
+            sil_score = spark_silhouette_score(rdd_test, centers)
             
             results.append({
                 'k_value': k,
                 'iteration_id': run_id,
-                'performance_wcss': wcss
+                'silhouette_score': sil_score
             })
             
         rdd_train.unpersist()
@@ -151,16 +200,17 @@ def k_search(rdd_sample, k_list, epochs, num_iter, raw_csv, stats_csv):
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
     
+    print("Calculating Final Metrics...")
     # Calculate statistics grouping by k_value
     df_stats = df_results.groupby('k_value').agg(
-        mean_wcss=('performance_wcss', 'mean'),
-        std_wcss=('performance_wcss', 'std')
+        mean_silhouette=('silhouette_score', 'mean'),
+        std_silhouette=('silhouette_score', 'std')
     ).reset_index()
     df_stats.to_csv(stats_csv, index=False)
     
-    # Use KneeLocator to find the mathematical elbow
-    kl = KneeLocator(list(df_stats['k_value']), list(df_stats['mean_wcss']), curve="convex", direction="decreasing")
-    optimal_k = kl.elbow if kl.elbow else k_list[0]
+  # Best K maximizes the silhouette score
+    best_row_idx = df_stats['mean_silhouette'].idxmax()
+    optimal_k = df_stats.loc[best_row_idx, 'k_value']
 
     duration = time.time() - start_time
     
@@ -172,31 +222,42 @@ def k_search(rdd_sample, k_list, epochs, num_iter, raw_csv, stats_csv):
         metrics={"optimal_k_found": int(optimal_k)},
         base_filepath=raw_csv
     )
-    
+    print("Done!")
+
     return optimal_k, df_stats
 
-def b_search(rdd_sample, best_k, b_list, epochs, num_iter, raw_csv, stats_csv):
+def b_search(rdd_sample, best_k, b_list, docs_volume, num_iter, raw_csv, stats_csv):
     """Grid Search to find best b parameter among list of values."""
     start = time.time()
     results = []
+    epochs_values = []
     
     for run_id in range(num_iter):
         rdd_train, rdd_test = rdd_sample.randomSplit([0.8, 0.2], seed=run_id)
         rdd_train.cache()
         rdd_test.cache()
 
+        # Actions to trigger the cache on worker's RAM
+        train_size = rdd_train.count() 
+        test_size = rdd_test.count()
+
         for b in b_list:
+            #For every batch size the same volume of docs has to be evaluated in order not to falsify time results
+            epochs = max(1,int(docs_volume/b))
+            epochs_values.append(epochs)
+
+            print(f'Testing Mini-Batch Size={b}, iteration:{run_id}')
             start_time = time.time()
             centers = minibatch_kmeans(rdd_train, best_k, b, epochs)
             exec_time = time.time() - start_time
             
-            wcss = calculate_wcss(rdd_test, centers)
+            sil_score = spark_silhouette_score(rdd_test, centers)
             
             results.append({
                 'batch_size': b,
                 'iteration_id': run_id,
-                'performance_wcss': wcss,
-                'execution_time_sec': exec_time
+                'silhouette_score': sil_score,
+                'execution_time': exec_time
             })
             
         rdd_train.unpersist()
@@ -204,25 +265,28 @@ def b_search(rdd_sample, best_k, b_list, epochs, num_iter, raw_csv, stats_csv):
 
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
+    print("Calculating Final Metrics...")
     
     df_stats = df_results.groupby('batch_size').agg(
-        mean_wcss=('performance_wcss', 'mean'),
-        std_wcss=('performance_wcss', 'std'),
+        mean_silhouette=('silhouette_score', 'mean'),
+        std_silhouette=('silhouette_score', 'std'),
         mean_time=('execution_time_sec', 'mean'),
         std_time=('execution_time_sec', 'std')
     ).reset_index()
     df_stats.to_csv(stats_csv, index=False)
-    
-    # Combine normalized scores to find the best batch size
-    # Add logic OR to prevent by zero division
-    wcss_range = (df_stats['mean_wcss'].max() - df_stats['mean_wcss'].min()) or 1.0
-    time_range = (df_stats['mean_time'].max() - df_stats['mean_time'].min()) or 1.0
 
-    # Equal wieghts to wcss and time: worst b value will have a combined score of 2.0, the best 0.0
-    df_stats['combined_score'] = ((df_stats['mean_wcss'] - df_stats['mean_wcss'].min()) / wcss_range) + \
-                                 ((df_stats['mean_time'] - df_stats['mean_time'].min()) / time_range)
+    # Introduce a tolerance of 2% decrease in silhouette score to compute best_b
+    best_sil = df_stats['mean_silhouette'].max()
+    tolerance = 0.02 
+    accepted_sil = best_sil * (1.0 - tolerance)
+    mask_sil = df_stats['mean_silhouette'] >= accepted_sil
+
+    #Filter the DataFrame with only accepted silhouette scores
+    accepted_batch = df_stats[mask_sil]
+    # best_b is the one that minimizes run time among these values
+    mask_b = accepted_batch['mean_time'].idxmin()
+    best_b = accepted_batch.loc[mask_b, 'batch_size']
     
-    best_b = df_stats.loc[df_stats['combined_score'].idxmin(), 'batch_size']
 
     duration = time.time() - start
     
@@ -230,10 +294,12 @@ def b_search(rdd_sample, best_k, b_list, epochs, num_iter, raw_csv, stats_csv):
     save_metadata(
         func_name="b_search",
         duration= f'{duration} (s)',
-        params={"best_k_used": best_k, "b_list": b_list, "epochs": epochs, "iterations": num_iter},
+        params={"best_k_used": best_k, "b_list": b_list, "epochs": epochs_values, "iterations": num_iter},
         metrics={"optimal_b_found": int(best_b)},
         base_filepath=raw_csv
     )
+
+    print("Done!")
     
     return int(best_b), df_stats
 
@@ -290,6 +356,10 @@ def mini_batch_run(rdd_data, evaluation_data_path, best_k, best_b, epochs, num_i
         rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=run_id)
         rdd_train.cache()
         rdd_test.cache()
+        
+        # Actions to trigger the cache on worker's RAM
+        train_size = rdd_train.count() 
+        test_size = rdd_test.count()
         
         start_time = time.time()
         centers = minibatch_kmeans(rdd_train, best_k, best_b, epochs)

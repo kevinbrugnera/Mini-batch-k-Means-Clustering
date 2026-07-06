@@ -11,13 +11,11 @@ TARGET_SCRIPT=$1
 
 # Load IPs from ips.env file
 if [ -f ips.env ]; then
-    echo "Loading variables from ips.env..."
+    echo "Loading IPs from ips.env..."
     set -a         
     source ips.env    
     set +a         
-else
-    echo "ERROR: ips.env file not found."
-    exit 1
+
 fi
 
 #Activate dedicated python enviroment

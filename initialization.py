@@ -18,11 +18,11 @@ from pyspark.sql import SparkSession
 from functions import k_search, b_search
 
 # Global Variables
-NUM_ITERATIONS = 50                 # Iterations for statistics
+NUM_ITERATIONS = 100                # Iterations for statistics
 EPOCHS = 20                         # Training step for single k-means run
 K_RANGE = [2,4,6,8,10]       # K values to test
 B_RANGE = [50,250,500,1000,1500,2000,2500,3000,4000,5000]                    # b values to test
-SAMPLE_SIZE = 50000                  # Sample of RCV1 dataset to analyze
+SAMPLE_SIZE = 100000                  # Sample of RCV1 dataset to analyze
 
 # Directory setup
 os.makedirs("data", exist_ok=True)
@@ -77,7 +77,10 @@ if __name__ == "__main__":
     print(f"Loading a sample of {SAMPLE_SIZE} documents from .parquet Dataset...")
     
     # Read the parquet directly
-    df_sample = spark.read.parquet(PARQUET_PATH).limit(SAMPLE_SIZE)
+    df_full = spark.read.parquet(PARQUET_PATH)
+    total_docs = df_full.count()
+    fraction = min(1.0, SAMPLE_SIZE / total_docs)   
+    df_sample = df_full.sample(False, fraction, seed=28).repartition(24)
     
     # Map each row to a dense numpy array of float32
     rdd_sample = df_sample.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
@@ -92,7 +95,7 @@ if __name__ == "__main__":
     # --- Phase 2: Optimal Batch Size (b) ---
     print(f"\n[2/2] Search for Optimal Batch Size (b) with Best K={best_k}...")
     best_b, b_stats = b_search(
-        rdd_sample, best_k, B_RANGE, EPOCHS, NUM_ITERATIONS, B_RAW_CSV, B_STATS_CSV
+        rdd_sample, best_k, B_RANGE, SAMPLE_SIZE, NUM_ITERATIONS, B_RAW_CSV, B_STATS_CSV
     )
     print(f"Optimal Batch Size (b) found: {best_b}")
 
