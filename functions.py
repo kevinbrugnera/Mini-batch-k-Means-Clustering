@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from kneed import KneeLocator
+from pyspark import StorageLevel
 from sklearn.metrics import adjusted_mutual_info_score as AMI
 from sklearn.metrics import normalized_mutual_info_score as NMI
 from pyspark.ml.linalg import Vectors
@@ -140,16 +140,16 @@ def classic_kmeans(rdd_train, k: int, epochs: int):
         
     return centers
 
-def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int):
+def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int, seed: int):
     """Executes the Mini-Batch K-Means algorithm distributing the load on Spark workers."""
-    centers_list = rdd_train.takeSample(False, k)
+    centers_list = rdd_train.takeSample(False, k, seed)
     centers = np.array(centers_list) 
     
     v = np.zeros(k)
     
     # Calculate fraction for Spark's .sample()
     total_count = rdd_train.count()
-    fraction = float(b) / total_count if total_count > 0 else 1.0
+    fraction = min(1, float(b)/total_count)
     
     for epoch in range(epochs):
         # Broadcast the centers
@@ -252,21 +252,22 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
     """Grid Search to find best b parameter among list of values."""
     start = time.time()
     results = []
+
+    rdd_train, rdd_test = rdd_sample.randomSplit([0.8, 0.2], seed=1)
+    rdd_train.persist() 
+    rdd_test.persist()  
+
+    # Actions to trigger the cache on worker's RAM
+    train_size = rdd_train.count() 
+    test_size = rdd_test.count()
     
     for run_id in range(num_iter):
-        rdd_train, rdd_test = rdd_sample.randomSplit([0.8, 0.2], seed=run_id)
-        rdd_train.persist()
-        rdd_test.persist()
-
-        # Actions to trigger the cache on worker's RAM
-        train_size = rdd_train.count() 
-        test_size = rdd_test.count()
 
         for b in b_list:
 
             print(f'Testing Mini-Batch Size={b}, iteration:{run_id}')
             start_time = time.time()
-            centers = minibatch_kmeans(rdd_train, K, b, epochs)
+            centers = minibatch_kmeans(rdd_train, K, b, epochs, seed=run_id)
             exec_time = time.time() - start_time
             
             ch_score = calinski_harabasz(rdd_test, centers, K)
@@ -282,8 +283,8 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
                 'execution_time': exec_time
             })
             
-        rdd_train.unpersist()
-        rdd_test.unpersist()
+    rdd_train.unpersist()
+    rdd_test.unpersist()
 
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
@@ -403,19 +404,20 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
     best_wcss = float('inf')
     best_centers = []
     best_run_id = -1
+
+    rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=run_id)
+    rdd_train.persist() 
+    rdd_test.persist()  
+
+     # Actions to trigger the cache on worker's RAM
+    train_size = rdd_train.count() 
+    test_size = rdd_test.count()
     
     for run_id in range(num_iter):
         print(f"MiniBatch K-means, {epochs} epochs -- Iteration: {run_id}")
-        rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=run_id)
-        rdd_train.persist()
-        rdd_test.persist()
-        
-        # Actions to trigger the cache on worker's RAM
-        train_size = rdd_train.count() 
-        test_size = rdd_test.count()
         
         start_time = time.time()
-        centers = minibatch_kmeans(rdd_train, K, best_b, epochs)
+        centers = minibatch_kmeans(rdd_train, K, best_b, epochs, seed=run_id)
         exec_time = time.time() - start_time
         
         wcss = WCSS(rdd_test, centers)
@@ -435,8 +437,8 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
             'wcss': wcss,
         })
         
-        rdd_train.unpersist()
-        rdd_test.unpersist()
+    rdd_train.unpersist()
+    rdd_test.unpersist()
 
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
