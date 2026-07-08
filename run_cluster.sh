@@ -26,7 +26,8 @@ NUM_PARTITIONS=12
 
 spark-submit \
   --master spark://$MASTER_IP:7077 \
-  --executor-memory 1G \
+  --driver-memory 2G \
+  --executor-memory 3G \
   --total-executor-cores 6 \
   --executor-cores 2 \
   --conf spark.default.parallelism=12 \
