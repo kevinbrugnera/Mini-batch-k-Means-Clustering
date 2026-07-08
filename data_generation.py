@@ -123,9 +123,9 @@ def distribute_generated_data():
         print("\n" + "="*40)
         print("\n[INFO] YOU'RE IN A LOCAL ENVIROMENT -> No data distribution required :)\n")
         print("-" * 40)
-        print("[WARN] You are indeed on a cluster? Don't worry!")
-        print("       You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
-        print("       If you have any doubts, follow the instructions at instructions.pdf")
+        print("[WARN] Are you actually on a cluster? Don't worry!")
+        print("       You forgot to change WORKER_IPS settings in ips.env file.")
+        print("       If you have any doubts, follow the instructions at instructions.md")
         print("="*40 + "\n")
         return
 

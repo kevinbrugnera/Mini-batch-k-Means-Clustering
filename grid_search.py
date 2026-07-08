@@ -43,39 +43,12 @@ if __name__ == "__main__":
     if not os.path.exists(PARQUET_PATH):
         raise FileNotFoundError(f"Missing {PARQUET_PATH}. Please run generate_data.py first.")
 
-    # Environment check for the SparkSession
-    worker_ips_str = os.getenv("WORKER_IPS", "")
-    
-    print("\n" + "="*40)
-    if worker_ips_str:
-
-        print("[INFO] YOU'RE ON A CLUSTER.")
-        print("       Creating SparkSession with run_cluster.sh specs...")
-        
-        
-        # Specs inside the running script
-        spark = SparkSession.builder \
+    #Creates spark session with run_script.sh specs
+    spark = SparkSession.builder \
             .appName("Grid-Search") \
-            .getOrCreate()
-    else:
-
-        print("[INFO] YOU'RE IN A LOCAL ENVIROMENT.")
-        print("       Using configurationin specified in <initialization.py> at line 69-73.")
-        print("       Modify it accordingly to your needs.")
-        print("-" * 40)
-        print("[WARN] You are indeed on a cluster? Don't worry!")
-        print("       You must call ./run_cluster.sh <name of .py scritp> from your terminal.")
-        print("       If you have any doubts, follow the instructions at instructions.pdf")
-        
-        # Local configuration: set number of workers (local[*]) and memory desired
-        spark = SparkSession.builder \
-            .appName("Grid-Search") \
-            .master("local[*]") \
-            .config("spark.driver.memory", "512mb") \
             .getOrCreate()
             
     spark.sparkContext.setLogLevel("ERROR")
-    print("="*40 + "\n")
     
     print(f"Loading a sample of {SAMPLE_SIZE} documents from .parquet Dataset...")
     
