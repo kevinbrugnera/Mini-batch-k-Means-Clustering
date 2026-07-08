@@ -405,7 +405,7 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
     best_centers = []
     best_run_id = -1
 
-    rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=run_id)
+    rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2],seed=18)
     rdd_train.persist() 
     rdd_test.persist()  
 
@@ -466,7 +466,6 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
         params={"K": K, "b": best_b, "epochs": epochs, "iterations": num_iter},
         metrics={"champion_run_id": best_run_id,
             "champion_wcss": best_wcss,
-            "champion_centroids": best_centers_check,
             },
         base_filepath=raw_csv
     )

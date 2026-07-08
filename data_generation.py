@@ -162,8 +162,9 @@ def distribute_generated_data():
             "-q",
             f"{remote_user}@{ip}", "mkdir -p ~/Project"]
         subprocess.run(create_dir_command, check=True)
-        '''
+    
 
+        
         #With thi command we copy the data directory inside the newly created Project one
         scp_command = [
             "scp",
@@ -179,6 +180,36 @@ def distribute_generated_data():
             print(f"Successful Data Transfer on {ip}!")
         except subprocess.CalledProcessError:
             print(f"Network error while sending data to {ip}.")
+        '''
+        # Double check, creates the Project folder with an empty data folder inside if setup failed for some reason
+        create_dir_command = [
+            "ssh", 
+            "-o", "StrictHostKeyChecking=no", 
+            "-o", "BatchMode=yes",  
+            "-q",
+            f"{worker_user}@{ip}", f"mkdir -p {abs_path}/data"
+        ]
+        subprocess.run(create_dir_command, check=True)
+            
+        # rsync to copy current version on master node or update to its last version base on master node
+        # -a: maintains authorizations etc.
+        # -z: zip the data during transfer
+        # --delete: if detects old file on current version deletes it
+        rsync_command = [
+            "rsync",
+            "-az",
+            "--delete",
+            "-e", 
+            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes",
+            f"{abs_path}/data/",  
+            f"{worker_user}@{ip}:{abs_path}/data/"
+        ]
+            
+        try:
+            subprocess.run(rsync_command, check=True)
+            print(f"   Successful Data Sync on {ip}!")
+        except subprocess.CalledProcessError:
+            print(f"   [ERROR] Sync error on {ip}.")
 
     print("\nData Distriubtion Complete! Ready to work.")
 

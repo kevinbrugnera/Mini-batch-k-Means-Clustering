@@ -11,6 +11,7 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 load_dotenv("ips.env")     
 
 import numpy as np
+import pandas as pd
 from pyspark.sql import SparkSession
 from functions import cluster_diagnostic
 
@@ -20,7 +21,7 @@ os.makedirs("data", exist_ok=True)
 
 #  Path pointers
 EVALUATION_PATH = "data/evaluation_dataset"
-CENTROIDS_PATH = "......"
+CENTROIDS_PATH = "runs/stats_thin_benchmark.csv"
 
 if __name__ == "__main__":
     
@@ -31,10 +32,11 @@ if __name__ == "__main__":
         raise FileNotFoundError(f"Missing {CENTROIDS_PATH}. Please run benchmark.py first.")
         
     # Load best centroids
-    with open(CENTROIDS_PATH, "r") as f:
-        metadata = json.load(f)
+    stats_df = pd.read_csv(CENTROIDS_PATH)
 
-    champion_centroids = metadata["metrics"]["champion_centroids"]
+    centroids_json_string = stats_df['champion_centroids'].iloc[0]
+
+    champion_centroids = np.array(json.loads(centroids_json_string), dtype=np.float32)
 
     # Environment check for the SparkSession
     worker_ips_str = os.getenv("WORKER_IPS", "")

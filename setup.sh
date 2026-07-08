@@ -43,11 +43,18 @@ for IP in "${WORKER_ARRAY[@]}"; do
     if [ -n "$IP" ]; then
         echo "Copying on Worker $i: $IP..."
         
-        # Create direcorty with same path as current master directory (Corretto in WORKER_USER)
+        # Create direcorty with same path as current master directory 
         ssh -o StrictHostKeyChecking=no -q "$WORKER_USER@$IP" "mkdir -p $PWD"
         
+
         # Recursively copy pyvenv enviroment
-        scp -o StrictHostKeyChecking=no -q -r pyvenv "$WORKER_USER@$IP:$PWD/"
+        #scp -o StrictHostKeyChecking=no -q -r pyvenv "$WORKER_USER@$IP:$PWD/"
+
+        # rsync to copy current version on master node or update to its last version base on master node
+        # -a: maintains authorizations etc.
+        # -z: zip data
+        # --delete: if detects old file on current version deletes it
+        rsync -az -e "ssh -o StrictHostKeyChecking=no" pyvenv/ "$WORKER_USER@$IP:$PWD/pyvenv/"
         
         echo "Done!"
         ((i++))

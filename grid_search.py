@@ -26,13 +26,13 @@ B_RANGE = [500, 1000, 2000, 4000, 8000, 16000]                 # b values to tes
 SAMPLE_SIZE = 50000                  # Sample of RCV1 dataset to analyze
 
 # Directory setup
-os.makedirs("data", exist_ok=True)
+os.makedirs("runs", exist_ok=True)
 
 # Output Paths
 #K_RAW_CSV = "data/k_search_raw.csv"
 #K_STATS_CSV = "data/k_search_stats.csv"
-B_RAW_CSV = "data/b_search_raw_try.csv"
-B_STATS_CSV = "data/b_search_stats_try.csv"
+B_RAW_CSV = "runs/b_search_raw.csv"
+B_STATS_CSV = "runs/b_search_stats.csv"
 #PARAMS_CSV = "data/best_b.csv"
 
 # Updated Path pointing to the dense parquet

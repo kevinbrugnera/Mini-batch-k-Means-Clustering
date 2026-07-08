@@ -19,17 +19,17 @@ K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps
 SAMPLE_SIZE = 0                #Documents to analyze. Set to zero if you want toanalyze full dataset
-RUN_IDENTIFIER = "fat_bench" 
+RUN_IDENTIFIER = "partitions32_benchmark" 
 
 # Directory setup
-os.makedirs("data", exist_ok=True)
+os.makedirs("runs", exist_ok=True)
 
 # Dynamic Output Paths
-FINAL_RAW_CSV = f"data/raw_{RUN_IDENTIFIER}.csv"
-FINAL_STATS_CSV = f"data/stats_{RUN_IDENTIFIER}.csv"
+FINAL_RAW_CSV = f"runs/raw_{RUN_IDENTIFIER}.csv"
+FINAL_STATS_CSV = f"runs/stats_{RUN_IDENTIFIER}.csv"
 
 #Read initialization file with best parameters
-PARAMS_JSON = "data/b_search_raw_ch_metadata.json" 
+PARAMS_JSON = "runs/b_search_raw_metadata.json" 
 
 # Updated Path pointing to the dense parquet
 DATASET_PATH = "data/rcv1_dataset"
