@@ -19,7 +19,7 @@ K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps
 SAMPLE_SIZE = 0                #Documents to analyze. Set to zero if you want toanalyze full dataset
-RUN_IDENTIFIER = "partitions32_benchmark" 
+RUN_IDENTIFIER = "strong_scaling_12c"   
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)

@@ -129,3 +129,61 @@ spark-submit \
   --conf spark.default.parallelism=96 \
   --py-files functions.py \
   $TARGET_SCRIPT
+
+3. Stron Scaling
+
+- 4 cores
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 4 \
+  --executor-cores 4 \
+  --conf spark.default.parallelism=4 \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+- 8 cores
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 8 \
+  --executor-cores 4 \
+  --conf spark.default.parallelism=8 \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+- 12 cores
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 12 \
+  --executor-cores 4 \
+  --conf spark.default.parallelism=12 \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+- 16 cores
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 16 \
+  --executor-cores 4 \
+  --conf spark.default.parallelism=16 \
+  --py-files functions.py \
+  $TARGET_SCRIPT

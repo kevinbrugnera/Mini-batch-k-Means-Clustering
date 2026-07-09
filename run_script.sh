@@ -46,9 +46,9 @@ spark-submit \
   --conf spark.executor.memoryOverhead=2048 \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
-  --total-executor-cores 16 \
+  --total-executor-cores 12 \
   --executor-cores 4 \
-  --conf spark.default.parallelism=32 \
+  --conf spark.default.parallelism=12 \
   --py-files functions.py \
   $TARGET_SCRIPT
 
