@@ -49,7 +49,7 @@ spark-submit \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
   --total-executor-cores 16 \
-  --executor-cores 4 \
+  --executor-cores 1 \
   --conf spark.eventLog.enabled=true \
   --conf spark.eventLog.dir=file:///tmp/spark-events \
   --py-files functions.py \
