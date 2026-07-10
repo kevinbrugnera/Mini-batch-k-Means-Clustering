@@ -31,8 +31,8 @@ os.makedirs("runs", exist_ok=True)
 # Output Paths
 #K_RAW_CSV = "data/k_search_raw.csv"
 #K_STATS_CSV = "data/k_search_stats.csv"
-B_RAW_CSV = "runs/b_search_raw.csv"
-B_STATS_CSV = "runs/b_search_stats.csv"
+B_RAW_CSV = "runs/b_search.csv"
+B_STATS_CSV = "runs/stats_b_search.csv"
 #PARAMS_CSV = "data/best_b.csv"
 
 # Updated Path pointing to the dense parquet

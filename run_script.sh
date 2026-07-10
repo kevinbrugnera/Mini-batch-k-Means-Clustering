@@ -39,6 +39,8 @@ if [ -n "$WORKER_IPS" ]; then
     # --conf spark.memory.fraction=0.8: Tells the JVMs to use 80% of their memory for spark engine
     # --conf spark.memory.storageFraction=0.7: Of that 80%, use 70% to cache and store the data
 
+mkdir -p /tmp/spark-events
+
 spark-submit \
   --master spark://$MASTER_IP:7077 \
   --driver-memory 2G \
@@ -46,9 +48,10 @@ spark-submit \
   --conf spark.executor.memoryOverhead=2048 \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
-  --total-executor-cores 12 \
+  --total-executor-cores 16 \
   --executor-cores 4 \
-  --conf spark.default.parallelism=12 \
+  --conf spark.eventLog.enabled=true \
+  --conf spark.eventLog.dir=file:///tmp/spark-events \
   --py-files functions.py \
   $TARGET_SCRIPT
 
@@ -68,7 +71,10 @@ else
     echo "================================================="
   
     # Local execution parameters
+    mkdir -p /tmp/spark-events
+
     MASTER_URL="local[8]"
+
     
     # No need to define executors since it uses the RAM of our single machine
     spark-submit \

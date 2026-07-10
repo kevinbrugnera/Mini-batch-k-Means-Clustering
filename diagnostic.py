@@ -17,7 +17,7 @@ from functions import cluster_diagnostic
 
 
 # Directory setup
-os.makedirs("data", exist_ok=True)
+os.makedirs("runs", exist_ok=True)
 
 #  Path pointers
 EVALUATION_PATH = "data/evaluation_dataset"

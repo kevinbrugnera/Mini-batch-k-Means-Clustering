@@ -471,3 +471,79 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
     )
     
     return df_stats
+
+def classic_kmeans_run(rdd_data, K, epochs, num_iter, raw_csv, stats_csv):
+    """Runs the final comprehensive Classic Full-Batch k-means maintaining identical telemetry."""
+    start = time.time()
+    results = []
+
+    best_wcss = float('inf')
+    best_centers = []
+    best_run_id = -1
+
+    # USe the same seed as mini_batch_run for consistency
+    rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=18)
+    rdd_train.persist() 
+    rdd_test.persist()  
+
+     # Actions to trigger the cache on worker's RAM
+    train_size = rdd_train.count() 
+    test_size = rdd_test.count()
+    
+    for run_id in range(num_iter):
+        print(f"Classic K-means, {epochs} epochs -- Iteration: {run_id}")
+        
+        start_time = time.time()
+        # Chiamiamo il K-Means classico passando run_id come seed
+        centers = classic_kmeans(rdd_train, K, epochs)
+        exec_time = time.time() - start_time
+        
+        # WCSS (Assicurati che la tua funzione WCSS sia importata)
+        wcss = WCSS(rdd_test, centers)
+
+        if wcss < best_wcss:
+            best_wcss = wcss
+            best_centers = centers
+            best_run_id = run_id
+        
+        results.append({
+            'iteration_id': run_id,
+            'k_value': K,
+            'execution_time': exec_time,
+            'wcss': wcss,
+        })
+        
+    rdd_train.unpersist()
+    rdd_test.unpersist()
+
+    df_results = pd.DataFrame(results)
+    df_results.to_csv(raw_csv, index=False)
+    
+    best_centers_check = [c.tolist() if isinstance(c, np.ndarray) else c for c in best_centers]
+
+    stats_dict = {
+        'mean_wcss': df_results['wcss'].mean(),
+        'std_wcss': df_results['wcss'].std(),
+        'mean_time': df_results['execution_time'].mean(),
+        'std_time': df_results['execution_time'].std(),
+        'champion_run_id': best_run_id,
+        'champion_wcss_score': best_wcss,
+        'champion_centroids': json.dumps(best_centers_check) 
+    }
+    
+    df_stats = pd.DataFrame([stats_dict])
+    df_stats.to_csv(stats_csv, index=False)
+
+    duration = time.time() - start
+
+    save_metadata(
+        func_name="classic_kmeans_run",
+        duration=f"{duration} (s)",
+        params={"K": K, "epochs": epochs, "iterations": num_iter},
+        metrics={"champion_run_id": best_run_id,
+                 "champion_wcss": best_wcss,
+                },
+        base_filepath=raw_csv
+    )
+
+    return df_stats
