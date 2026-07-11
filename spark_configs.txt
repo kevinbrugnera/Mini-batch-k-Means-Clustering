@@ -1,6 +1,8 @@
 SPARK SESSION CONFIGURATIONS
 
+=======================================================
 1. Topology
+=======================================================
 
 NUM_PARTITIONS = 16
 
@@ -9,8 +11,8 @@ NUM_PARTITIONS = 16
 spark-submit \
   --master spark://$MASTER_IP:7077 \
   --driver-memory 2G \
-  --executor-memory 5G \
-  --conf spark.executor.memoryOverhead=2048 \
+  --executor-memory 1G \
+  --conf spark.executor.memoryOverhead=750M \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
   --total-executor-cores 16 \
@@ -25,8 +27,8 @@ spark-submit \
 spark-submit \
   --master spark://$MASTER_IP:7077 \
   --driver-memory 2G \
-  --executor-memory 5G \
-  --conf spark.executor.memoryOverhead=2048 \
+  --executor-memory 2G \
+  --conf spark.executor.memoryOverhead=1500M \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
   --total-executor-cores 16 \
@@ -42,7 +44,7 @@ spark-submit \
   --master spark://$MASTER_IP:7077 \
   --driver-memory 2G \
   --executor-memory 5G \
-  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.executor.memoryOverhead=2048M \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
   --total-executor-cores 16 \
@@ -52,7 +54,9 @@ spark-submit \
   --py-files functions.py \
   $TARGET_SCRIPT
 
+=======================================================
 2. Partitions
+=======================================================
 
 NUM_PARTITIONS in [4,8,16,32,48,64,80,96]
 
@@ -70,9 +74,11 @@ spark-submit \
   --py-files functions.py \
   $TARGET_SCRIPT
 
+=======================================================
 3. Strong Scaling (same configs for classical K-Means)
+=======================================================
 
-NUM_PARTITIONS = 16 for every run
+NUM_PARTITIONS = 48 for every run
 
 - 4 Cores
 
@@ -131,14 +137,16 @@ spark-submit \
   --conf spark.executor.memoryOverhead=2048 \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
-  --total-executor-cores 12 \
+  --total-executor-cores 16 \
   --executor-cores 4 \
   --conf spark.eventLog.enabled=true \
   --conf spark.eventLog.dir=file:///tmp/spark-events \
   --py-files functions.py \
   $TARGET_SCRIPT
 
+=======================================================
 4. Weak Scaling
+=======================================================
 
 - 4 cores 200k docs, NUM_PARTITIONS = 4
 
@@ -188,7 +196,77 @@ spark-submit \
   --py-files functions.py \
   $TARGET_SCRIPT
 
-- 16 cores 800k docs, NUM_PARTITIONS = 12
+- 16 cores 800k docs, NUM_PARTITIONS = 16
+
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 16 \
+  --executor-cores 4 \
+  --conf spark.eventLog.enabled=true \
+  --conf spark.eventLog.dir=file:///tmp/spark-events \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+=======================================================
+5. K-means (like strong scaling in minibatch)
+=======================================================
+
+NUM_PARTITIONS = 48
+
+- 4 cores
+
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 4 \
+  --executor-cores 4 \
+  --conf spark.eventLog.enabled=true \
+  --conf spark.eventLog.dir=file:///tmp/spark-events \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+- 8 cores
+
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 8 \
+  --executor-cores 4 \
+  --conf spark.eventLog.enabled=true \
+  --conf spark.eventLog.dir=file:///tmp/spark-events \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+- 12 cores
+
+spark-submit \
+  --master spark://$MASTER_IP:7077 \
+  --driver-memory 2G \
+  --executor-memory 5G \
+  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.memory.fraction=0.8 \
+  --conf spark.memory.storageFraction=0.7 \
+  --total-executor-cores 12 \
+  --executor-cores 4 \
+  --conf spark.eventLog.enabled=true \
+  --conf spark.eventLog.dir=file:///tmp/spark-events \
+  --py-files functions.py \
+  $TARGET_SCRIPT
+
+- 16 cores
 
 spark-submit \
   --master spark://$MASTER_IP:7077 \

@@ -1,7 +1,7 @@
 {
     "execution_info": {
         "function": "mini_batch_run",
-        "duration": "2314.9461812973022 (s)"
+        "duration": "5772.537770271301 (s)"
     },
     "parameters": {
         "K": 4,
@@ -10,7 +10,7 @@
         "iterations": 50
     },
     "metrics_summary": {
-        "champion_run_id": 5,
-        "champion_wcss": 124486.30791508869
+        "champion_run_id": 17,
+        "champion_wcss": 125107.63561430885
     }
 }

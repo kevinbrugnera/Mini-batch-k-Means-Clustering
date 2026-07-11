@@ -55,34 +55,6 @@ def WCSS(rdd_test, centers: list) -> float:
     bc_centers.destroy()
     return wcss
 
-def silhouette_score(rdd_test, centers):
-    """
-    Evaluate Silhouette Score using pySpark implementation.
-    """
-    centers_np = np.array(centers)
-    bc_centers = rdd_test.context.broadcast(centers_np)
-    
-    # elper function to map feature and prediction labels in MLlib reuqested format
-    def map_to_tuple(x):
-        c_idx = closest_idx(x, bc_centers.value)
-        return (Vectors.dense(x), int(c_idx))
-    
-    #Creates predicition DataFrame
-    predictions_df = rdd_test.map(map_to_tuple).toDF(["features", "prediction"]) 
-    
-    # Use pyspark evaluator to compute silhouette score
-    evaluator = ClusteringEvaluator(
-        predictionCol="prediction", 
-        featuresCol="features", 
-        metricName="silhouette", 
-        distanceMeasure="squaredEuclidean"
-    )
-    
-    score = evaluator.evaluate(predictions_df)
-    
-    bc_centers.destroy()
-    return score
-
 def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
     """Calculates the Calinski-Harabasz Index dynamically using RDDs."""
     N = rdd_test.count()
@@ -183,71 +155,6 @@ def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int, seed: int):
 # GET BEST INITIALIZATION PARAMETERS
 # ==========================================
 
-'''
-def k_search(rdd_sample, k_list, epochs, num_iter, raw_csv, stats_csv):
-    """Grid Search to find best K parameter among list of values."""
-    start_time = time.time()
-    results = []
-    
-    for run_id in range(num_iter):
-        # Create Train and Test splits
-        rdd_train, rdd_test = rdd_sample.randomSplit([0.8, 0.2], seed=run_id)
-        rdd_train.persist()
-        rdd_test.persist()
-
-        # Actions to trigger the cache on worker's RAM
-        train_size = rdd_train.count() 
-        test_size = rdd_test.count()
-
-        for k in k_list:
-            # Sanity check
-            if k < 2:
-                print(f'K={k} will have Silhouette Score -1. This metric requires at least two clusters.' )
-                continue
-
-            print(f'Testing K={k}, iteration:{run_id}')
-            centers = classic_kmeans(rdd_train, k, epochs)
-            sil_score = silhouette_score(rdd_test, centers)
-            
-            results.append({
-                'k_value': k,
-                'iteration_id': run_id,
-                'silhouette_score': sil_score
-            })
-            
-        rdd_train.unpersist()
-        rdd_test.unpersist()
-
-    df_results = pd.DataFrame(results)
-    df_results.to_csv(raw_csv, index=False)
-    
-    print("Calculating Final Metrics...")
-    # Calculate statistics grouping by k_value
-    df_stats = df_results.groupby('k_value').agg(
-        mean_silhouette=('silhouette_score', 'mean'),
-        std_silhouette=('silhouette_score', 'std')
-    ).reset_index()
-    df_stats.to_csv(stats_csv, index=False)
-    
-  # Best K maximizes the silhouette score
-    best_row_idx = df_stats['mean_silhouette'].idxmax()
-    optimal_k = df_stats.loc[best_row_idx, 'k_value']
-
-    duration = time.time() - start_time
-    
-    # Metadata
-    save_metadata(
-        func_name="k_search",
-        duration= f"{duration} (s)",
-        params={"k_list": k_list, "epochs": epochs, "iterations": num_iter},
-        metrics={"optimal_k_found": int(optimal_k)},
-        base_filepath=raw_csv
-    )
-    print("Done!")
-
-    return optimal_k, df_stats
-'''
-
 def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
     """Grid Search to find best b parameter among list of values."""
     start = time.time()
@@ -271,15 +178,11 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
             exec_time = time.time() - start_time
             
             ch_score = calinski_harabasz(rdd_test, centers, K)
-            #sil_score = silhouette_score(rdd_test, centers)
-            #wcss = WCSS(rdd_test, centers)
             
             results.append({
                 'batch_size': b,
                 'iteration_id': run_id,
                 'ch_score': ch_score,
-                #'silhouette_score': sil_score,
-                #'wcss': wcss,
                 'execution_time': exec_time
             })
             
@@ -293,10 +196,6 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
     df_stats = df_results.groupby('batch_size').agg(
         mean_ch=('ch_score', 'mean'),
         std_ch=('ch_score', 'std'),
-        #mean_wcss=('wcss', 'mean'),
-        #std_wcss=('wcss', 'std'),
-        #mean_silhouette=('silhouette_score', 'mean'),
-        #std_silhouette=('silhouette_score', 'std'),
         mean_time=('execution_time', 'mean'),
         std_time=('execution_time', 'std')
     ).reset_index()
@@ -329,7 +228,6 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
 
     print("Done!")
     
-    #return df_stats
     return int(best_b), df_stats
 
 # ==========================================

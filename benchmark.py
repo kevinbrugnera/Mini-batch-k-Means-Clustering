@@ -19,8 +19,8 @@ K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps
 SAMPLE_SIZE = 0             #Documents to analyze. Set to zero if you want toanalyze full dataset
-RUN_IDENTIFIER = "partitions64"  
-NUM_PARTITIONS = 64
+RUN_IDENTIFIER = "strong_12c"  
+NUM_PARTITIONS = 48
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
@@ -53,6 +53,7 @@ if __name__ == "__main__":
     #Creates spark session with run_script.sh specs
     spark = SparkSession.builder \
             .appName(f"MiniBatch_{RUN_IDENTIFIER}") \
+            .config("spark.api.mode", " classic") \
             .getOrCreate()
 
             

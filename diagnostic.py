@@ -45,6 +45,7 @@ if __name__ == "__main__":
     #Creates spark session with run_script.sh specs
     spark = SparkSession.builder \
             .appName(f"Diagnostic_{RUN_IDENTIFIER}") \
+            .config("spark.api.mode", " classic") \
             .getOrCreate()
 
     spark.sparkContext.setLogLevel("ERROR")

@@ -39,6 +39,7 @@ if [ -n "$WORKER_IPS" ]; then
     # --conf spark.memory.fraction=0.8: Tells the JVMs to use 80% of their memory for spark engine
     # --conf spark.memory.storageFraction=0.7: Of that 80%, use 70% to cache and store the data
 
+# To store logs for Spark History
 mkdir -p /tmp/spark-events
 
 spark-submit \
@@ -70,7 +71,7 @@ else
     echo "       Check instructions.md if you have any doubts."
     echo "================================================="
   
-    # Local execution parameters
+    # # To store logs for Spark History
     mkdir -p /tmp/spark-events
 
     MASTER_URL="local[8]"

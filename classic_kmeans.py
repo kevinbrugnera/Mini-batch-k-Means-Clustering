@@ -18,8 +18,8 @@ from functions import classic_kmeans_run
 K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps             
-RUN_IDENTIFIER = "k_means_12c"  
-NUM_PARTITIONS = 16
+RUN_IDENTIFIER = "k_means_16c"  
+NUM_PARTITIONS = 48
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
@@ -40,6 +40,7 @@ if __name__ == "__main__":
     #Creates spark session with run_script.sh specs
     spark = SparkSession.builder \
             .appName(f"Classic_Kmeans_{RUN_IDENTIFIER}") \
+            .config("spark.api.mode", " classic") \
             .getOrCreate()
 
             

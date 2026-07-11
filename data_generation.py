@@ -138,10 +138,6 @@ def distribute_generated_data():
 
     #Takes absolute path of current directory on the master's node
     abs_path = os.getcwd()
-    
-    # State worker user (always ubuntu on cloudveneto I think) and data path
-    #remote_user = "ubuntu"
-    #remote_project_path = "~/Project"
 
     
     print("\n" + "="*40)
@@ -151,36 +147,7 @@ def distribute_generated_data():
     
     for i, ip in enumerate(workers):
         print(f'-> Transferring data to worker {i+1}: {ip}...')
-
-        #In order for the rest of the code to work the data has to be in home/ubuntu/Project/data/...
-        # So we create the dedicated directory in every worker specified
-        '''
-        create_dir_command = [
-            "ssh", 
-            "-o", "StrictHostKeyChecking=no", 
-            "-o", "BatchMode=yes",  
-            "-q",
-            f"{remote_user}@{ip}", "mkdir -p ~/Project"]
-        subprocess.run(create_dir_command, check=True)
-    
-
-        
-        #With thi command we copy the data directory inside the newly created Project one
-        scp_command = [
-            "scp",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-q",
-            "-r", "data/",
-            f"{worker_user}@{ip}:{abs_path}"]
-
-        try:
-            # Execute and raise value if something is wrong
-            subprocess.run(scp_command, check=True)
-            print(f"Successful Data Transfer on {ip}!")
-        except subprocess.CalledProcessError:
-            print(f"Network error while sending data to {ip}.")
-        '''
+       
         # Double check, creates the Project folder with an empty data folder inside if setup failed for some reason
         create_dir_command = [
             "ssh", 

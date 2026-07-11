@@ -29,11 +29,8 @@ SAMPLE_SIZE = 50000                  # Sample of RCV1 dataset to analyze
 os.makedirs("runs", exist_ok=True)
 
 # Output Paths
-#K_RAW_CSV = "data/k_search_raw.csv"
-#K_STATS_CSV = "data/k_search_stats.csv"
 B_RAW_CSV = "runs/b_search.csv"
 B_STATS_CSV = "runs/stats_b_search.csv"
-#PARAMS_CSV = "data/best_b.csv"
 
 # Updated Path pointing to the dense parquet
 PARQUET_PATH = "data/rcv1_dataset"
@@ -46,6 +43,7 @@ if __name__ == "__main__":
     #Creates spark session with run_script.sh specs
     spark = SparkSession.builder \
             .appName("Grid-Search") \
+            .config("spark.api.mode", " classic") \
             .getOrCreate()
             
     spark.sparkContext.setLogLevel("ERROR")
@@ -64,42 +62,11 @@ if __name__ == "__main__":
     # Map each row to a dense numpy array of float32
     rdd_sample = df_sample.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
 
-    '''
-    # Optimal K
-    print("\n[1/2] Search for Optimal K...")
-    best_k, k_stats = k_search(
-        rdd_sample, K_RANGE, EPOCHS, NUM_ITERATIONS, K_RAW_CSV, K_STATS_CSV
-    )
-    print(f"Optimal K found: {best_k}")
-    '''
-
     #  Optimal Batch Size b
     print(f"\nSearch for Optimal Batch Size with K={K}...")
     best_b, b_stats = b_search(                                 #add best_b if using silhouette
         rdd_sample, K, B_RANGE, EPOCHS, NUM_ITERATIONS, B_RAW_CSV, B_STATS_CSV
     )
     print(f"Optimal Batch Size found: {best_b}")
-
-    
-    '''
-    # Save best b in dedicated file (little overkill but helpful)
-    params_df = pd.DataFrame([{ 'best_b': best_b}])
-    params_df.to_csv(PARAMS_CSV, index=False)
-    '''
-
-    duration = time.time() - start
-
-    '''Useless
-    # Metadata
-    with open(PARAMS_CSV.replace('.csv', '_metadata.json'), 'w') as f:
-        json.dump({
-            "execution_info": {
-                "script": "initialization.py",
-                "duration": f'{duration} (s)',
-            },
-            "optimal_parameters_found": {"best_b": int(best_b)},
-        }, f, indent=4)
-    '''
-
     print(f"\nInitialization complete!")
     spark.stop()
