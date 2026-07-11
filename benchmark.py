@@ -18,9 +18,9 @@ from functions import mini_batch_run
 K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps
-SAMPLE_SIZE = 0               #Documents to analyze. Set to zero if you want toanalyze full dataset
-RUN_IDENTIFIER = "thin_topology"  
-NUM_PARTITIONS = 16            
+SAMPLE_SIZE = 0             #Documents to analyze. Set to zero if you want toanalyze full dataset
+RUN_IDENTIFIER = "partitions64"  
+NUM_PARTITIONS = 64
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
@@ -64,7 +64,6 @@ if __name__ == "__main__":
     df = spark.read.parquet(DATASET_PATH).repartition(NUM_PARTITIONS)
     # Added .count() to show exact dataset size, trigger the repartition
     total_docs = df.count()
-    partitions = df.rdd.getNumPartitions()
 
     if SAMPLE_SIZE == 0:
 
@@ -83,7 +82,7 @@ if __name__ == "__main__":
     
     print(f"\n=========================================")
     print(f"Dataset Size: {dataset_size} documents")
-    print(f"Partitions  : {partitions}")
+    print(f"Partitions  : {NUM_PARTITIONS}")
     print(f"Iterations  : {NUM_ITER}")
     print(f"Epochs      : {EPOCHS}")
     print(f"Batch Size  : {batch_size}")

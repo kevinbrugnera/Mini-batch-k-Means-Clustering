@@ -18,7 +18,8 @@ from functions import classic_kmeans_run
 K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps             
-RUN_IDENTIFIER = "k_means_16c"  
+RUN_IDENTIFIER = "k_means_12c"  
+NUM_PARTITIONS = 16
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
@@ -47,7 +48,7 @@ if __name__ == "__main__":
     print(f"Loading RCV1 Parquet Dataset...")
     
     # Read dataset
-    df = spark.read.parquet(DATASET_PATH)
+    df = spark.read.parquet(DATASET_PATH).repartition(NUM_PARTITIONS)
     # Added .count() to show exact dataset size
     total_docs = df.count()
     rdd_data = df.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
@@ -55,6 +56,7 @@ if __name__ == "__main__":
     
     print(f"\n=========================================")
     print(f"Dataset Size: {total_docs} documents")
+    print(f"Partitions  : {NUM_PARTITIONS}")
     print(f"Iterations  : {NUM_ITER}")
     print(f"Epochs      : {EPOCHS}")
     print(f"=========================================\n")

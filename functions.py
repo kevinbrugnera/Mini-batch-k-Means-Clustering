@@ -324,7 +324,6 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
         duration= f'{duration} (s)',
         params={"best_k_used": K, "b_list": b_list, "epochs": epochs, "iterations": num_iter},
         metrics={"optimal_b_found": int(best_b)},
-        #metrics={},
         base_filepath=raw_csv
     )
 
@@ -337,21 +336,24 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
 # DIAGNOSTIC/ PERFORMANCE EVALUATION
 # ==========================================
 
-def cluster_diagnostic(spark, evaluation_data_path, champion_centers):
+def cluster_diagnostic(rdd_data, champion_centers, plot_csv):
     """
     Evaluates the Champion Model against the ground truth labels 
     using Adjusted and Normalized Mutual Information scores.
     Runs locally (no PySpark).
     """
+
+    start = time.time()
+
     print("Loading Evaluation Dataset...")
-    df_eval = spark.read.parquet(evaluation_data_path)
+    #df_eval = spark.read.parquet(evaluation_data_path)
     
     # Convert the centers to a numpy array for the new closest_idx
     centers_np = np.array(champion_centers)
-    bc_centers = spark.sparkContext.broadcast(centers_np)
+    bc_centers = rdd_data.context.broadcast(centers_np)
 
-    # Evaaluation RDD
-    rdd_eval = df_eval.select("features", "true_labels").rdd
+    # Evaluation RDD
+    #rdd_eval = df_eval.select("features", "true_labels").rdd
 
     def predict_label(row):
         # Converts feature in array
@@ -361,32 +363,43 @@ def cluster_diagnostic(spark, evaluation_data_path, champion_centers):
     
         return (row['true_labels'], pred)
 
-    labels_rdd = rdd_eval.map(predict_label)
+    labels_rdd = rdd_data.map(predict_label)
     labels_local = labels_rdd.collect()
 
     labels_true = [x[0] for x in labels_local]
     labels_pred = [x[1] for x in labels_local]
     
     print("Evaluating MiniBatch Clustering Performance...")
-    #Metrics evaluation on master node
+    # Metrics evaluation on master node
     ami_score = AMI(labels_true, labels_pred)
     nmi_score = NMI(labels_true, labels_pred)
     evaluated_documents = len(labels_true)
     
     #To visualize clusters we just need a few points. We let this sampling process to the spark session
     fraction = min(1, 5000/evaluated_documents)
-    df_sample = df_eval.sample(False, fraction).limit(5000)
+    sampled_rows = rdd_data.sample(False, fraction)
 
-    df_plot = df_sample.toPandas()
+    df_plot = pd.DataFrame([row.asDict() for row in sampled_rows])
     
     #Evaluate locally the predicetd labels(easy to do on only 5000 documents)
     df_plot['predicted_labels'] = df_plot['features'].apply(lambda x: closest_idx(np.array(x), centers_np))
     df_plot['AMI_score'] = ami_score
     df_plot['NMI_score'] = nmi_score
-    
-    plot_file_path = evaluation_data_path.replace("evaluation_dataset", "plot_diagnostic.csv")
-    df_plot.to_csv(plot_file_path, index=False)
 
+    df_plot.to_csv(plot_csv, index=False)
+
+    duration = time.time() - start
+
+     # Metadata
+    save_metadata(
+        func_name="cluster_diagnostic",
+        duration= f'{duration} (s)',
+        params= 'Champion run centers',
+        metrics={'AMI': ami_score, "NMI": nmi_score},
+        base_filepath=plot_csv
+    )
+
+    print("Done!")
     print(f'AMI Score: {ami_score}')
     print(f'NMI Score: {nmi_score}')
     
