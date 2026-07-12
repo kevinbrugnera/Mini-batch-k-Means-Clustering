@@ -1,7 +1,7 @@
 {
     "execution_info": {
         "function": "classic_kmeans_run",
-        "duration": "1829.2085545063019 (s)"
+        "duration": "3494.383248567581 (s)"
     },
     "parameters": {
         "K": 4,
@@ -9,7 +9,7 @@
         "iterations": 50
     },
     "metrics_summary": {
-        "champion_run_id": 27,
-        "champion_wcss": 124213.82321858406
+        "champion_run_id": 41,
+        "champion_wcss": 124647.6703298986
     }
 }

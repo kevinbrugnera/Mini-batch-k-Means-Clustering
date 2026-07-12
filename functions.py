@@ -243,15 +243,10 @@ def cluster_diagnostic(rdd_data, champion_centers, plot_csv):
 
     start = time.time()
 
-    print("Loading Evaluation Dataset...")
-    #df_eval = spark.read.parquet(evaluation_data_path)
     
     # Convert the centers to a numpy array for the new closest_idx
     centers_np = np.array(champion_centers)
     bc_centers = rdd_data.context.broadcast(centers_np)
-
-    # Evaluation RDD
-    #rdd_eval = df_eval.select("features", "true_labels").rdd
 
     def predict_label(row):
         # Converts feature in array
@@ -267,21 +262,19 @@ def cluster_diagnostic(rdd_data, champion_centers, plot_csv):
     labels_true = [x[0] for x in labels_local]
     labels_pred = [x[1] for x in labels_local]
     
-    print("Evaluating MiniBatch Clustering Performance...")
+    print("Evaluating Clustering Performance...")
     # Metrics evaluation on master node
-    ami_score = AMI(labels_true, labels_pred)
     nmi_score = NMI(labels_true, labels_pred)
     evaluated_documents = len(labels_true)
     
     #To visualize clusters we just need a few points. We let this sampling process to the spark session
     fraction = min(1, 5000/evaluated_documents)
-    sampled_rows = rdd_data.sample(False, fraction)
+    sampled_rows = rdd_data.sample(False, fraction).collect()
 
     df_plot = pd.DataFrame([row.asDict() for row in sampled_rows])
     
     #Evaluate locally the predicetd labels(easy to do on only 5000 documents)
     df_plot['predicted_labels'] = df_plot['features'].apply(lambda x: closest_idx(np.array(x), centers_np))
-    df_plot['AMI_score'] = ami_score
     df_plot['NMI_score'] = nmi_score
 
     df_plot.to_csv(plot_csv, index=False)
@@ -293,12 +286,11 @@ def cluster_diagnostic(rdd_data, champion_centers, plot_csv):
         func_name="cluster_diagnostic",
         duration= f'{duration} (s)',
         params= 'Champion run centers',
-        metrics={'AMI': ami_score, "NMI": nmi_score},
+        metrics={"NMI": nmi_score},
         base_filepath=plot_csv
     )
 
     print("Done!")
-    print(f'AMI Score: {ami_score}')
     print(f'NMI Score: {nmi_score}')
     
     bc_centers.destroy()

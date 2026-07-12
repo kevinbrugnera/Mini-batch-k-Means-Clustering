@@ -18,7 +18,7 @@ from functions import classic_kmeans_run
 K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps             
-RUN_IDENTIFIER = "k_means_16c"  
+RUN_IDENTIFIER = "k_means_4c"  
 NUM_PARTITIONS = 48
 
 # Directory setup

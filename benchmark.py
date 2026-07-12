@@ -19,8 +19,8 @@ K = 4
 NUM_ITER = 50                 # Iteration for statistics
 EPOCHS = 20                    # Training steps
 SAMPLE_SIZE = 0             #Documents to analyze. Set to zero if you want toanalyze full dataset
-RUN_IDENTIFIER = "strong_12c"  
-NUM_PARTITIONS = 48
+RUN_IDENTIFIER = "balanced_topology"  
+NUM_PARTITIONS = 16
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)

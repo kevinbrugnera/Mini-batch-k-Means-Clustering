@@ -46,7 +46,7 @@ spark-submit \
   --master spark://$MASTER_IP:7077 \
   --driver-memory 2G \
   --executor-memory 5G \
-  --conf spark.executor.memoryOverhead=2048 \
+  --conf spark.executor.memoryOverhead=2048M \
   --conf spark.memory.fraction=0.8 \
   --conf spark.memory.storageFraction=0.7 \
   --total-executor-cores 16 \
@@ -55,6 +55,9 @@ spark-submit \
   --conf spark.eventLog.dir=file:///tmp/spark-events \
   --py-files functions.py \
   $TARGET_SCRIPT
+
+
+
 
 #=============================================
 #LOCAL ENVIROMENT SPECIFIC
