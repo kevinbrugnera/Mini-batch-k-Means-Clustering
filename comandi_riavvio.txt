@@ -1,0 +1,50 @@
+# ==============================================================================
+# FASE 1: CONFIGURAZIONE HARDWARE E NODI (Da eseguire sul MASTER NODE)
+# ==============================================================================
+
+# 1. Spostarsi nella cartella delle configurazioni di Spark
+cd /usr/local/spark/conf
+
+# 2. Aggiornare l'elenco dei worker
+# (Assicurarsi di togliere il Master e aggiungere gli IP dei 4 Worker)
+sudo nano workers
+
+# 3. Creare il file di configurazione ambientale partendo dal template (da fare in ogni worker)
+sudo cp spark-env.sh.template spark-env.sh
+
+# 4. Modificare RAM e Core dedicati (aggiungere queste righe in fondo al file) su ogni worker
+# SPARK_WORKER_CORES=4
+# SPARK_WORKER_MEMORY=8g 
+sudo nano spark-env.sh
+
+
+# ==============================================================================
+# FASE 2: RIAVVIO AUTOMATICO GLOBALE (Da eseguire sul MASTER NODE)
+# ==============================================================================
+
+# 5. Spostarsi nella cartella degli script di esecuzione
+cd /usr/local/spark/sbin
+
+# 6. Spegnere l'intera infrastruttura (Master e processi Worker collegati)
+/usr/local/spark/sbin/stop-all.sh           #metti worker/master se vuoi solo spegnere singolo
+
+# 7. Riaccendere l'infrastruttura con i nuovi parametri
+/usr/local/spark/sbin/start-all.sh          #metti worker/master se vuoi solo riavviare singolo
+
+
+# ==============================================================================
+# FASE 3: TROUBLESHOOTING E AGGANCIO MANUALE (Da eseguire sul SINGOLO WORKER)
+# Da usare solo se il punto 8 rivela che uno o più worker mancano all'appello
+# ==============================================================================
+
+# se da SparkGUI non vedi worker allora devi riagganciarli
+
+# 11. Forzare l'aggancio manuale del worker sordo al Master da fare su ogni worker
+/usr/local/spark/sbin/start-worker.sh spark://10.67.22.135:7077
+
+# se processo non si aggancia subito
+kill -9 <INSERIRE_NUMERO_PID>
+
+# 10. Polverizzare eventuali file fantasma che bloccano il riavvio
+rm -f /tmp/spark*.pid
+rm -f /usr/local/spark/*.pid

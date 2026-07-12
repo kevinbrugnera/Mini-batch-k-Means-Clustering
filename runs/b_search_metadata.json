@@ -1,0 +1,22 @@
+{
+    "execution_info": {
+        "function": "b_search",
+        "duration": "5738.201862573624 (s)"
+    },
+    "parameters": {
+        "best_k_used": 4,
+        "b_list": [
+            500,
+            1000,
+            2000,
+            4000,
+            8000,
+            16000
+        ],
+        "epochs": 20,
+        "iterations": 50
+    },
+    "metrics_summary": {
+        "optimal_b_found": 1000
+    }
+}
