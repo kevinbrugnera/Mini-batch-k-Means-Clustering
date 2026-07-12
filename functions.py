@@ -4,18 +4,14 @@ import json
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from pyspark import StorageLevel
-from sklearn.metrics import adjusted_mutual_info_score as AMI
 from sklearn.metrics import normalized_mutual_info_score as NMI
-from pyspark.ml.linalg import Vectors
-from pyspark.ml.evaluation import ClusteringEvaluator
 
 # ==========================================
 # METADATA GENERATOR
 # ==========================================
 
 def save_metadata(func_name, duration, params, metrics, base_filepath):
-    """Generates a JSON file containing execution logs and metadata."""
+    """Generates a JSON file containing execution metadata."""
     metadata = {
         "execution_info": {
             "function": func_name,
@@ -25,11 +21,8 @@ def save_metadata(func_name, duration, params, metrics, base_filepath):
         "metrics_summary": metrics
     }
     
-    # use the csv name to generate the .json file
-    meta_path = base_filepath.replace('_raw.csv', '_metadata.json')
-    if meta_path == base_filepath: 
-        meta_path = base_filepath.replace('.csv', '_metadata.json')
-        
+    meta_path = base_filepath.replace('.csv', '_metadata.json')
+         
     with open(meta_path, 'w') as f:
         json.dump(metadata, f, indent=4)
 
@@ -38,25 +31,28 @@ def save_metadata(func_name, duration, params, metrics, base_filepath):
 # ==========================================
 
 def closest_idx(point: np.ndarray, centers: np.ndarray) -> int:
-    """Finds the index of the closest center leveraging NumPy broadcasting."""
+    """Finds the index of the closest center."""
     distances = np.sum((centers - point) ** 2, axis=1)
     return int(np.argmin(distances))
 
 def WCSS(rdd_test, centers: list) -> float:
-    """Calculates the Within-Cluster Sum of Squares (WCSS) for evaluation."""
+    """Calculates the Within-Cluster Sum of Squares (WCSS) for cost evaluation."""
     centers_np = np.array(centers)
+    
+    # Broadcasts centers to executors
     bc_centers = rdd_test.context.broadcast(centers_np)
     
     wcss = rdd_test.map(
-        # Replaced distance_squared with direct numpy operation for consistency and speed
         lambda x: float(np.sum((x - bc_centers.value[closest_idx(x, bc_centers.value)]) ** 2))
     ).sum()
     
+    #Clean executors RAM
     bc_centers.destroy()
+
     return wcss
 
 def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
-    """Calculates the Calinski-Harabasz Index dynamically using RDDs."""
+    """Calculates the Calinski-Harabasz Index for best_b identification."""
     N = rdd_test.count()
     
     # Compute gloabl centroid by summing all point vectors and dividing by N
@@ -65,9 +61,13 @@ def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
     
     # Total Sum of Squares. We use total variance rule to get BCSS later (TSS = BCSS + wcss_score)
     bc_global_mean = rdd_test.context.broadcast(global_mean)
+
+    # Sum of Squares between each point of test set and global center found
     tss = rdd_test.map(
         lambda x: float(np.sum((x - bc_global_mean.value) ** 2))
     ).sum()
+
+    #Clean executors RAM
     bc_global_mean.destroy()
     
     #Evaluates wcss_score using designed functions
@@ -88,32 +88,35 @@ def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
 # CLUSTERING ALGORITHMS
 # ==========================================
 
-def classic_kmeans(rdd_train, k: int, epochs: int):
-    """Executes the standard K-Means algorithm using dense NumPy arrays with Spark broadcasting."""
-    centers = rdd_train.takeSample(False, k)
+def classic_kmeans(rdd_train, k: int, epochs: int, seed: int):
+    """Executes the standard K-Means algorithm using Spark."""
+
+    # Initialize centers randomly from training set
+    centers = rdd_train.takeSample(False, k, seed)
     
     for _ in range(epochs):
+        #Broadcast
         centers_np = np.array(centers)
         bc_centers = rdd_train.context.broadcast(centers_np)
         
-        # Map using the broadcasted variable
+        # Map using the broadcasted variable, returns -> (center_idx, (point,count)) of course count will always be 1
         mapped_points = rdd_train.map(lambda x: (closest_idx(x, bc_centers.value), (x, 1)))
         
-        # Reduce
+        # Reduce by key (center_idx) and gives -> (center_idx, (vectorial_sum, population))
         reduced_points = mapped_points.reduceByKey(lambda a, b: (a[0] + b[0], a[1] + b[1]))
         
-        # Update centers
+        # Update centers and gives them to master -> (center_idc, vectorial_sum/population)
         new_centers_rdd = reduced_points.map(lambda x: (x[0], x[1][0] / x[1][1]))
         new_centers_dict = dict(new_centers_rdd.collect())
         
-        # Rebuild centers list
+        # Update centers for next iteration
         centers = [new_centers_dict.get(i, centers[i]) for i in range(k)]
         bc_centers.destroy()
         
     return centers
 
 def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int, seed: int):
-    """Executes the Mini-Batch K-Means algorithm distributing the load on Spark workers."""
+    """Executes the Mini-Batch K-Means algorithm using Spark."""
     centers_list = rdd_train.takeSample(False, k, seed)
     centers = np.array(centers_list) 
     
@@ -397,11 +400,9 @@ def classic_kmeans_run(rdd_data, K, epochs, num_iter, raw_csv, stats_csv):
         print(f"Classic K-means, {epochs} epochs -- Iteration: {run_id}")
         
         start_time = time.time()
-        # Chiamiamo il K-Means classico passando run_id come seed
-        centers = classic_kmeans(rdd_train, K, epochs)
+        centers = classic_kmeans(rdd_train, K, epochs, seed=run_id)
         exec_time = time.time() - start_time
         
-        # WCSS (Assicurati che la tua funzione WCSS sia importata)
         wcss = WCSS(rdd_test, centers)
 
         if wcss < best_wcss:
