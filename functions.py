@@ -48,7 +48,7 @@ def WCSS(rdd_test, centers: list) -> float:
     
     #Clean executors RAM
     bc_centers.destroy()
-
+    
     return wcss
 
 def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
