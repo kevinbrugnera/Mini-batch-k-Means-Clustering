@@ -11,7 +11,7 @@ from sklearn.metrics import normalized_mutual_info_score as NMI
 # ==========================================
 
 def save_metadata(func_name, duration, params, metrics, base_filepath):
-    """Generates a JSON file containing execution metadata."""
+    """Generates a JSON file containing execution metadata"""
     metadata = {
         "execution_info": {
             "function": func_name,
@@ -31,12 +31,12 @@ def save_metadata(func_name, duration, params, metrics, base_filepath):
 # ==========================================
 
 def closest_idx(point: np.ndarray, centers: np.ndarray) -> int:
-    """Finds the index of the closest center."""
+    """Finds the index of the closest center"""
     distances = np.sum((centers - point) ** 2, axis=1)
     return int(np.argmin(distances))
 
 def WCSS(rdd_test, centers: list) -> float:
-    """Calculates the Within-Cluster Sum of Squares (WCSS) for cost evaluation."""
+    """Calculates the Within-Cluster Sum of Squares (WCSS) for cost evaluation"""
     centers_np = np.array(centers)
     
     # Broadcasts centers to executors
@@ -52,7 +52,7 @@ def WCSS(rdd_test, centers: list) -> float:
     return wcss
 
 def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
-    """Calculates the Calinski-Harabasz Index for best_b identification."""
+    """Calculates the Calinski-Harabasz Index for best_b identification"""
     N = rdd_test.count()
     
     # Compute gloabl centroid by summing all point vectors and dividing by N
@@ -79,7 +79,8 @@ def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
     # Avoid zero divisions (just in case)
     if wcss == 0:
         return float('inf')
-        
+    
+    # Final Index
     ch_score = (bcss / (k - 1)) / (wcss / (N - k))
     
     return ch_score
@@ -89,7 +90,7 @@ def calinski_harabasz(rdd_test, centers: list, k: int) -> float:
 # ==========================================
 
 def classic_kmeans(rdd_train, k: int, epochs: int, seed: int):
-    """Executes the standard K-Means algorithm using Spark."""
+    """Executes the standard K-Means algorithm using Spark"""
 
     # Initialize centers randomly from training set
     centers = rdd_train.takeSample(False, k, seed)
@@ -116,13 +117,15 @@ def classic_kmeans(rdd_train, k: int, epochs: int, seed: int):
     return centers
 
 def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int, seed: int):
-    """Executes the Mini-Batch K-Means algorithm using Spark."""
+    """Executes the Mini-Batch K-Means algorithm using Spark"""
+
+    # Initialize centers randomly from training set
     centers_list = rdd_train.takeSample(False, k, seed)
     centers = np.array(centers_list) 
     
     v = np.zeros(k)
     
-    # Calculate fraction for Spark's .sample()
+    # Calculate fraction for pySpark's sample() function
     total_count = rdd_train.count()
     fraction = min(1, float(b)/total_count)
     
@@ -150,6 +153,7 @@ def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int, seed: int):
             batch_mean = sum_x / count      
             centers[c_idx] = (centers[c_idx] * (1.0 - eta)) + (batch_mean * eta)
             
+        # Cleans RAM
         bc_centers.destroy()
         
     return centers.tolist()
@@ -159,11 +163,18 @@ def minibatch_kmeans(rdd_train, k: int, b: int, epochs: int, seed: int):
 # ==========================================
 
 def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
-    """Grid Search to find best b parameter among list of values."""
+    """Grid Search to find best b parameter among list of values"""
+
+    # Tracks total time of the search
     start = time.time()
+
+    # Empty list to store results of every iteration
     results = []
 
+    #pySpark function to split the dataset in training set (80%) and test set (20%)
     rdd_train, rdd_test = rdd_sample.randomSplit([0.8, 0.2], seed=1)
+
+    # Cache the RDDs in memory for the rest of the function
     rdd_train.persist() 
     rdd_test.persist()  
 
@@ -176,26 +187,33 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
         for b in b_list:
 
             print(f'Testing Mini-Batch Size={b}, iteration:{run_id}')
+
+            #Tracks time of a single iteration
             start_time = time.time()
             centers = minibatch_kmeans(rdd_train, K, b, epochs, seed=run_id)
             exec_time = time.time() - start_time
             
+            #Evaluates The evaluation index using the test set and the centers found
             ch_score = calinski_harabasz(rdd_test, centers, K)
             
+            # Append results of current iteration
             results.append({
                 'batch_size': b,
                 'iteration_id': run_id,
                 'ch_score': ch_score,
                 'execution_time': exec_time
             })
-            
+
+    # Empty the cache to free up memory on the executors  
     rdd_train.unpersist()
     rdd_test.unpersist()
 
+    # Here we save the results of every iteration
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
     print("Calculating Final Metrics...")
     
+    # With this we save just the final metrcis evaluated from the raw results
     df_stats = df_results.groupby('batch_size').agg(
         mean_ch=('ch_score', 'mean'),
         std_ch=('ch_score', 'std'),
@@ -205,19 +223,19 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
     df_stats.to_csv(stats_csv, index=False)
 
     
-    # Introduce a tolerance of 2% decrease in silhouette score to compute best_b
+    # Introduce a tolerance threshold to evaluate only a few CH index vaues in terms of time performance
     best_ch_score = df_stats['mean_ch'].max()
-    tolerance = 0.025
+    tolerance = 0.020
     accepted_ch = best_ch_score * (1.0 - tolerance)
     mask_ch = df_stats['mean_ch'] >= accepted_ch
 
-    #Filter the DataFrame with only accepted silhouette scores
+    #Filter the DataFrame and takes only CH values above the threshold
     accepted_batch = df_stats[mask_ch]
-    # best_b is the one that minimizes run time among these values
+    # best_b is the one that minimizes run time among those values
     mask_b = accepted_batch['mean_time'].idxmin()
     best_b = accepted_batch.loc[mask_b, 'batch_size']
     
-
+    # Stop time for the whole grid search
     duration = time.time() - start
     
     # Metadata
@@ -238,46 +256,50 @@ def b_search(rdd_sample, K, b_list, epochs, num_iter, raw_csv, stats_csv):
 # ==========================================
 
 def cluster_diagnostic(rdd_data, champion_centers, plot_csv):
-    """
-    Evaluates the Champion Model against the ground truth labels 
-    using Adjusted and Normalized Mutual Information scores.
-    Runs locally (no PySpark).
-    """
+    """Evaluates Champion Model of a run against the ground truth labels"""
 
+    #Tracks evaluation time
     start = time.time()
 
     
-    # Convert the centers to a numpy array for the new closest_idx
+    # Convert the centers to a numpy array and broadcaste them
     centers_np = np.array(champion_centers)
     bc_centers = rdd_data.context.broadcast(centers_np)
 
+    # Function to create tuple (real_label, predicted_label)
     def predict_label(row):
         # Converts feature in array
         point = np.array(row['features'])
-    
+
+        #Assigns every point (document) of the evaluation dataset to a cluster using the champion centers
         pred = closest_idx(point, bc_centers.value)
     
         return (row['true_labels'], pred)
 
+    #Applies the funtion to the evaluation dataset using map and then collect the results
     labels_rdd = rdd_data.map(predict_label)
     labels_local = labels_rdd.collect()
 
+    # Extracts true and prediceted labels for evaluation
     labels_true = [x[0] for x in labels_local]
     labels_pred = [x[1] for x in labels_local]
     
     print("Evaluating Clustering Performance...")
-    # Metrics evaluation on master node
+    # Calcultae NMI using sklearn function
     nmi_score = NMI(labels_true, labels_pred)
+    # Lenght of the evaluation dataset to calculate fraction of points to sample
     evaluated_documents = len(labels_true)
     
-    #To visualize clusters we just need a few points. We let this sampling process to the spark session
+    #To visualize clusters we just need a few points -> sampling with pyspark sample() function
     fraction = min(1, 5000/evaluated_documents)
     sampled_rows = rdd_data.sample(False, fraction).collect()
 
+    # Creates the DataFrame with only sampled point. Row: point, true_label
     df_plot = pd.DataFrame([row.asDict() for row in sampled_rows])
     
-    #Evaluate locally the predicetd labels(easy to do on only 5000 documents)
+    #Evaluate locally the predicetd labels(easy to do on only 5000 documents) and add corresponding column 
     df_plot['predicted_labels'] = df_plot['features'].apply(lambda x: closest_idx(np.array(x), centers_np))
+    #Add NMI score (redundant column but useful for plotting value)
     df_plot['NMI_score'] = nmi_score
 
     df_plot.to_csv(plot_csv, index=False)
@@ -303,38 +325,45 @@ def cluster_diagnostic(rdd_data, champion_centers, plot_csv):
 # ==========================================
 
 def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
-    """Runs the final comprehensive mini batch k-means using the discovered optimal parameters."""
+    """Runs the final mini batch k-means using the discovered optimal parameters"""
+
     start = time.time()
     results = []
 
+    # Here we save the best cost function value, corresponding centers and identification run_id
     best_wcss = float('inf')
     best_centers = []
     best_run_id = -1
 
+    #pySpark function to split the dataset in training set (80%) and test set (20%)
     rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2],seed=18)
+
+    #Cache the RDDs in memory for the rest of the function
     rdd_train.persist() 
     rdd_test.persist()  
 
-     # Actions to trigger the cache on worker's RAM
+    # Actions to trigger the cache on worker's RAM
     train_size = rdd_train.count() 
     test_size = rdd_test.count()
     
     for run_id in range(num_iter):
         print(f"MiniBatch K-means, {epochs} epochs -- Iteration: {run_id}")
         
+        # Time of single iteration
         start_time = time.time()
         centers = minibatch_kmeans(rdd_train, K, best_b, epochs, seed=run_id)
         exec_time = time.time() - start_time
         
+        #Evaluates cost function
         wcss = WCSS(rdd_test, centers)
 
+        #Update best values if current wcss is lower than previous best
         if wcss < best_wcss:
             best_wcss = wcss
             best_centers = centers
             best_run_id = run_id
         
-
-        
+        #Append results of current iteration
         results.append({
             'iteration_id': run_id,
             'k_value': K,
@@ -343,14 +372,18 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
             'wcss': wcss,
         })
         
+    # Free up cahched memory
     rdd_train.unpersist()
     rdd_test.unpersist()
 
+    # Raw results
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
     
+    # Saves the best centers as a list of lists instead of numpy arrays for JSON saving
     best_centers_check = [c.tolist() if isinstance(c, np.ndarray) else c for c in best_centers]
 
+    #Metrics summary to be stored in stats .csv file
     stats_dict = {
         'mean_wcss': df_results['wcss'].mean(),
         'std_wcss': df_results['wcss'].std(),
@@ -366,6 +399,7 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
 
     duration = time.time() - start
 
+    # Metadata
     save_metadata(
         func_name="mini_batch_run",
         duration= f"{duration} (s)",
@@ -379,20 +413,22 @@ def mini_batch_run(rdd_data, K, best_b, epochs, num_iter, raw_csv, stats_csv):
     return df_stats
 
 def classic_kmeans_run(rdd_data, K, epochs, num_iter, raw_csv, stats_csv):
-    """Runs the final comprehensive Classic Full-Batch k-means maintaining identical telemetry."""
+    """Runs the Classic Full-Batch k-means parallelized"""
+
     start = time.time()
     results = []
 
+    # Here we save the best cost function value, corresponding centers and identification run_id
     best_wcss = float('inf')
     best_centers = []
     best_run_id = -1
 
-    # USe the same seed as mini_batch_run for consistency
+    # Use the same seed as mini_batch_run for consistency
     rdd_train, rdd_test = rdd_data.randomSplit([0.8, 0.2], seed=18)
     rdd_train.persist() 
     rdd_test.persist()  
 
-     # Actions to trigger the cache on worker's RAM
+    # Actions to trigger the cache on worker's RAM
     train_size = rdd_train.count() 
     test_size = rdd_test.count()
     
@@ -405,11 +441,13 @@ def classic_kmeans_run(rdd_data, K, epochs, num_iter, raw_csv, stats_csv):
         
         wcss = WCSS(rdd_test, centers)
 
+        #Updates best values if current wcss is lower than previous best
         if wcss < best_wcss:
             best_wcss = wcss
             best_centers = centers
             best_run_id = run_id
         
+        #Iteration results
         results.append({
             'iteration_id': run_id,
             'k_value': K,
@@ -417,14 +455,17 @@ def classic_kmeans_run(rdd_data, K, epochs, num_iter, raw_csv, stats_csv):
             'wcss': wcss,
         })
         
+    #Free cahched memory
     rdd_train.unpersist()
     rdd_test.unpersist()
 
     df_results = pd.DataFrame(results)
     df_results.to_csv(raw_csv, index=False)
     
+    # Saves the best centers as a list of lists instead of numpy arrays for JSON saving
     best_centers_check = [c.tolist() if isinstance(c, np.ndarray) else c for c in best_centers]
 
+    #Metrics summary to be stored in stats .csv file
     stats_dict = {
         'mean_wcss': df_results['wcss'].mean(),
         'std_wcss': df_results['wcss'].std(),
@@ -440,6 +481,7 @@ def classic_kmeans_run(rdd_data, K, epochs, num_iter, raw_csv, stats_csv):
 
     duration = time.time() - start
 
+    #Metadata
     save_metadata(
         func_name="classic_kmeans_run",
         duration=f"{duration} (s)",

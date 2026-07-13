@@ -15,24 +15,24 @@ from pyspark.sql import SparkSession
 from functions import mini_batch_run
 
 # Global Variables
-K = 4
-NUM_ITER = 50                 # Iteration for statistics
-EPOCHS = 20                    # Training steps
-SAMPLE_SIZE = 0             #Documents to analyze. Set to zero if you want toanalyze full dataset
-RUN_IDENTIFIER = "balanced_topology"  
-NUM_PARTITIONS = 16
+K = 4                                   # K number of clusters
+NUM_ITER = 50                           # Iteration for statistics
+EPOCHS = 20                             # Training steps
+SAMPLE_SIZE = 0                         # Documents to analyze. Set to zero if you want to analyze full dataset
+RUN_IDENTIFIER = "balanced_topology"    # Name the output files
+NUM_PARTITIONS = 16                     # Number of partitions for the RDD
 
-# Directory setup
+# Directory setup to store the results
 os.makedirs("runs", exist_ok=True)
 
-# Dynamic Output Paths
+# Output file Paths
 FINAL_RAW_CSV = f"runs/{RUN_IDENTIFIER}.csv"
 FINAL_STATS_CSV = f"runs/stats_{RUN_IDENTIFIER}.csv"
 
-#Read initialization file with best parameters
+#Read initialization file with best_b parameter
 PARAMS_JSON = "runs/b_search_metadata.json" 
 
-# Updated Path pointing to the dense parquet
+# Path pointing to the parquet dataset
 DATASET_PATH = "data/rcv1_dataset"
 
 if __name__ == "__main__":
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     if not os.path.exists(DATASET_PATH):
         raise FileNotFoundError(f"Missing {DATASET_PATH}. Please run generate_data.py first.")
         
-    # Load optimal parameters found during the initialization step
+    # Load optimal MiniBAtch size found during the initialization step
     with open(PARAMS_JSON, "r") as f:
         init_metadata = json.load(f)
 
@@ -56,25 +56,26 @@ if __name__ == "__main__":
             .config("spark.api.mode", " classic") \
             .getOrCreate()
 
-            
+    # Logs display only errors
     spark.sparkContext.setLogLevel("ERROR")
     
     print(f"Loading RCV1 Parquet Dataset...")
     
-    # Read dataset
+    # Read dataset and partition it using global variable
     df = spark.read.parquet(DATASET_PATH).repartition(NUM_PARTITIONS)
+
     # Added .count() to show exact dataset size, trigger the repartition
     total_docs = df.count()
 
     if SAMPLE_SIZE == 0:
-
         # Analyze whole dataset
-        # Map rows into float32 arrays
+        # Map rows into float32 arrays. We use float32 to save some memory, no real need for double precision
         rdd_data = df.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
         dataset_size = total_docs
     
     else:
-
+        
+        #Use sample() to extract just a fraction of the documents
         fraction = min(1, SAMPLE_SIZE/total_docs)
         df_sample = df.sample(False, fraction, seed=58)
         rdd_data = df_sample.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
@@ -89,7 +90,7 @@ if __name__ == "__main__":
     print(f"Batch Size  : {batch_size}")
     print(f"=========================================\n")
     
-    # Execute the core final benchmark
+    # Execute the core benchmark
     stats_df = mini_batch_run(
         rdd_data=rdd_data,
         K= K,

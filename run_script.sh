@@ -57,8 +57,6 @@ spark-submit \
   $TARGET_SCRIPT
 
 
-
-
 #=============================================
 #LOCAL ENVIROMENT SPECIFIC
 #=============================================
@@ -74,12 +72,11 @@ else
     echo "       Check instructions.md if you have any doubts."
     echo "================================================="
   
-    # # To store logs for Spark History
+    # To store logs for Spark History
     mkdir -p /tmp/spark-events
 
     MASTER_URL="local[8]"
-
-    
+ 
     # No need to define executors since it uses the RAM of our single machine
     spark-submit \
       --master $MASTER_URL \

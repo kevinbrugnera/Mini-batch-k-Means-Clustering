@@ -25,19 +25,22 @@ def generate_data():
     print("Processing RCV1 dataset...")
     rcv1 = fetch_rcv1()
     
-    # Extract true macrolabels
+    # Extract true macrolabels from dataset
     target_names = rcv1.target_names
     macro_labels = ['CCAT', 'ECAT', 'GCAT', 'MCAT']
     
-    # Saves the index identifying the macro labels (if 'CCAT' is at index 10 is stored as 10: 'CCAT')
-    macro_indices = {np.where(target_names == cat)[0][0]: cat for cat in macro_labels}
+    # Saves the index identifying the macro labels using(if 'CCAT' is at index 10 is stored as 10: 'CCAT')
+    macro_indices = {np.where(target_names == label)[0][0]: label for label in macro_labels}
     targets_csr = rcv1.target
+    #Saves macro labels assigned to each document in a list of lists
     macro_labels_list = []
     
     # Iterate over all documents to extract only the macro labels
     for i in range(targets_csr.shape[0]):
+
         # Finds indices of labels assigned to every single file
         row_indices = targets_csr.indices[targets_csr.indptr[i]:targets_csr.indptr[i+1]]
+
         # Checks if these labels are in the dictionary. If so, it keeps them
         macros_for_doc = [macro_indices[idx] for idx in row_indices if idx in macro_indices]
         macro_labels_list.append(macros_for_doc)
@@ -46,6 +49,8 @@ def generate_data():
     # Use a decent sample of documents extarcted randomly, to avoid memory usage overload
     # 50000 to 100000 documents should be enough to estimate good fitting parameters
     np.random.seed(42)
+
+    #This also serves as shuflle to avoid specific order enforced in original dataset
     sample_idx = np.random.choice(rcv1.data.shape[0], size=50000, replace=False)
     sorted_idx = np.sort(sample_idx)
     X_sample = rcv1.data[sorted_idx]
@@ -60,11 +65,13 @@ def generate_data():
 
     print("Dataset Chunking...")
     
+    #Creates data and evaluation directories
     data_dir = "data/rcv1_dataset"
     eval_dir = "data/evaluation_dataset"
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(eval_dir, exist_ok=True)
     
+    # We save the dataset in chunks of 10k documents each to avoid memory overload
     n_docs = rcv1.data.shape[0]
     batch_size = 10000
     
@@ -72,10 +79,14 @@ def generate_data():
         end_idx = min(start_idx + batch_size, n_docs)
         print(f"  -> Processing and saving chunk {start_idx} to {end_idx} / {n_docs}")
         
-        # Transofmration and normalization to avoid wrong clustering
+        # Transofmration and normalization of current chunk
         X_batch = rcv1.data[start_idx:end_idx]
         X_dense_batch = svd.transform(X_batch)
+        
+        #This normalization avoids different cluster assignment for documents with same topics but different lenght
         X_normalized_batch = normalize(X_dense_batch, norm='l2', axis=1)
+
+        #Saves the corresponding macro labels for the current chunk
         Y_batch = macro_labels_list[start_idx:end_idx]
         
         # Temporary DataFrame to store data
@@ -84,16 +95,18 @@ def generate_data():
             'true_labels': Y_batch
         })
         
-        #  Saves data chunk in dedicated diretcory
+        #  Saves data chunk in dedicated diretcory in .parquet format
         chunk_filename = f"data_{i:02d}.parquet"
         df_chunk.to_parquet(os.path.join(data_dir, chunk_filename), engine="pyarrow", index=False)
         
-        # 4Evaluation data saving
+        # Evaluation data saving
         eval_filename = f"eval_{i:02d}.parquet"
+
         # Takes only single label documents
         mask_single = df_chunk['true_labels'].apply(lambda x: len(x) == 1)
         df_eval_chunk = df_chunk[mask_single].copy()
         
+        #Checks if the chunk is empty, if not adds extracts single label from list casing (['label'] -> 'label')
         if not df_eval_chunk.empty:
             df_eval_chunk['true_labels'] = df_eval_chunk['true_labels'].apply(lambda x: x[0])
             df_eval_chunk.to_parquet(os.path.join(eval_dir, eval_filename), engine="pyarrow", index=False)
@@ -115,7 +128,7 @@ def distribute_generated_data():
     distributes the newly generated Parquet files to all worker nodes.
     """
     # Fetch the worker IPs from the environment variables.
-    # Uses ips.env file with IPs storend inside thnaks to load_dotenv()
+    # Uses ips.env file with IPs stored inside thnaks to load_dotenv()
     worker_ips_str = os.getenv("WORKER_IPS", "")
     
     # If the variable is empty or missing, assume local execution
@@ -129,7 +142,7 @@ def distribute_generated_data():
         print("="*40 + "\n")
         return
 
-    # Parse the IP addresses, removing any accidental spaces
+    # Retrieve the IPs, removing any accidental spaces
     workers = [ip.strip() for ip in worker_ips_str.split(",") if ip.strip()]
     master_user = getpass.getuser()
 
@@ -139,7 +152,6 @@ def distribute_generated_data():
     #Takes absolute path of current directory on the master's node
     abs_path = os.getcwd()
 
-    
     print("\n" + "="*40)
     print(f"[INFO] YOU'RE ON A CLUSTER WITH ({len(workers)} WORKERS.")
     print(f"       Starting files distribution...")
@@ -148,7 +160,7 @@ def distribute_generated_data():
     for i, ip in enumerate(workers):
         print(f'-> Transferring data to worker {i+1}: {ip}...')
        
-        # Double check, creates the Project folder with an empty data folder inside if setup failed for some reason
+        # Creates the Project folder with an empty data folder inside if setup.sh script failed for some reason
         create_dir_command = [
             "ssh", 
             "-o", "StrictHostKeyChecking=no", 
@@ -158,7 +170,7 @@ def distribute_generated_data():
         ]
         subprocess.run(create_dir_command, check=True)
             
-        # rsync to copy current version on master node or update to its last version base on master node
+        # rsync to copy current version on master node or update to its last version based on master node
         # -a: maintains authorizations etc.
         # -z: zip the data during transfer
         # --delete: if detects old file on current version deletes it

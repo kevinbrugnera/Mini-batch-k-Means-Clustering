@@ -15,20 +15,20 @@ from pyspark.sql import SparkSession
 from functions import classic_kmeans_run
 
 # Global Variables
-K = 4
-NUM_ITER = 50                 # Iteration for statistics
-EPOCHS = 20                    # Training steps             
-RUN_IDENTIFIER = "k_means_4c"  
-NUM_PARTITIONS = 48
+K = 4                                   # K number of clusters
+NUM_ITER = 50                           # Iteration for statistics
+EPOCHS = 20                             # Training steps             
+RUN_IDENTIFIER = "k_means_4c"           # Name the output files
+NUM_PARTITIONS = 48                     # Number of partitions for the RDD 
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
 
-# Dynamic Output Paths
+# Output Paths
 FINAL_RAW_CSV = f"runs/{RUN_IDENTIFIER}.csv"
 FINAL_STATS_CSV = f"runs/stats_{RUN_IDENTIFIER}.csv"
 
-# Updated Path pointing to the dense parquet
+# Path pointing to the parquet dataset
 DATASET_PATH = "data/rcv1_dataset"
 
 if __name__ == "__main__":
@@ -43,14 +43,15 @@ if __name__ == "__main__":
             .config("spark.api.mode", " classic") \
             .getOrCreate()
 
-            
+    # Logs display only errors
     spark.sparkContext.setLogLevel("ERROR")
     
     print(f"Loading RCV1 Parquet Dataset...")
     
     # Read dataset
     df = spark.read.parquet(DATASET_PATH).repartition(NUM_PARTITIONS)
-    # Added .count() to show exact dataset size
+
+    # Added .count() to show exact dataset size, trigger the repartition
     total_docs = df.count()
     rdd_data = df.rdd.map(lambda row: np.array(row.features, dtype=np.float32))
 
@@ -62,7 +63,7 @@ if __name__ == "__main__":
     print(f"Epochs      : {EPOCHS}")
     print(f"=========================================\n")
     
-    # Execute the core final benchmark
+    # Execute the core classic k-means algorithm
     stats_df = classic_kmeans_run(
         rdd_data=rdd_data,
         K= K,
