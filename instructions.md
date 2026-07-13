@@ -9,7 +9,7 @@
 
 This project implements a distributed Mini-Batch K-Means workflow using Apache Spark. The framework is designed to run on both a local machine and a multi-node Linux cluster, while providing a consistent execution environment across all nodes.
 
-> **Important:** All commands must be executed from the root `Project/` directory.
+> **Important:** All commands must be executed from the root `Project/` directory (Master). Workers will operate inside the `ProjectS3` directory 
 
 ---
 
@@ -61,6 +61,7 @@ AWS_SECRET_ACCESS_KEY="your_secret_key"
 S3_ENDPOINT="https://..."
 S3_BUCKET="bucket_name"
 ```
+>**Important:** In this case, rembember to import (in each node of the cluster) the CloudVeneto certificate. 
 
 These credentials are used during data generation and by all Spark jobs that read the dataset from object storage.
 

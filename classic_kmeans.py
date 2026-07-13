@@ -1,57 +1,51 @@
 import os
-import sys
-import json
+import time
 from dotenv import load_dotenv
 
-# Force spark to use python version used in the environment
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
 # Load .env file containing IP addresses
-load_dotenv("ips.env")     
+load_dotenv("ips.env")
 
+import json
 import numpy as np
+import urllib3
 from pyspark.sql import SparkSession
 from functions import classic_kmeans_run
-import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 # Global Variables
 K = 4
 NUM_ITER = 50                 # Iteration for statistics
-EPOCHS = 20                   # Training steps             
-RUN_IDENTIFIER = "k_means_16c"  
+EPOCHS = 20                   # Training steps
+RUN_IDENTIFIER = "k_means_16c"
 NUM_PARTITIONS = 48
 
 # S3 Credential Variables
 bucket_name = os.getenv("S3_BUCKET")
 
-s3_creds = {
-    'endpoint': os.getenv("S3_ENDPOINT"),
-    'access_key': os.getenv("AWS_ACCESS_KEY_ID"),
-    'secret_key': os.getenv("AWS_SECRET_ACCESS_KEY"),
-    'bucket': bucket_name
+s3_creds = {'endpoint': os.getenv("S3_ENDPOINT"),
+            'access_key': os.getenv("AWS_ACCESS_KEY_ID"),
+            'secret_key': os.getenv("AWS_SECRET_ACCESS_KEY"),
+            'bucket': bucket_name
 }
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
 
-# Dynamic Output Paths
+# Output Paths
 FINAL_RAW_CSV = f"runs/{RUN_IDENTIFIER}.csv"
 FINAL_STATS_CSV = f"runs/stats_{RUN_IDENTIFIER}.csv"
-
-# Updated Prefix pointing to the dense parquet in S3
 DATASET_PREFIX = "rcv1_dataset/"
 
 if __name__ == "__main__":
     
-    print("Inizializzazione SparkSession con configurazioni S3...")
-
+    print("Initializing SparkSession with S3 configurations...")
+    
     # Creates spark session with S3 connector configurations
     spark = SparkSession.builder \
+        .master("spark://master:7077") \
         .appName(f"Classic_Kmeans_{RUN_IDENTIFIER}") \
-        .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.4.1,org.apache.hadoop:hadoop-common:3.4.1') \
         .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
         .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "false") \
         .config('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider') \

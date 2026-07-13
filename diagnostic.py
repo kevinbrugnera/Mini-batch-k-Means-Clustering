@@ -1,22 +1,18 @@
 import os
-import sys
-import json
 from dotenv import load_dotenv
 
-# Force spark to use python version used in the environment
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
 # Load .env file containing IP addresses
-load_dotenv("ips.env")     
+load_dotenv("ips.env")
 
+import json
 import numpy as np
 import pandas as pd
+import urllib3
 from pyspark.sql import SparkSession
 from functions import cluster_diagnostic
-import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 # Global Variables
 RUN_IDENTIFIER = "minibatch_plot"
@@ -25,17 +21,16 @@ NUM_PARTITIONS = 16
 # S3 Credential Variables
 bucket_name = os.getenv("S3_BUCKET")
 
-s3_creds = {
-    'endpoint': os.getenv("S3_ENDPOINT"),
-    'access_key': os.getenv("AWS_ACCESS_KEY_ID"),
-    'secret_key': os.getenv("AWS_SECRET_ACCESS_KEY"),
-    'bucket': bucket_name
+s3_creds = {'endpoint': os.getenv("S3_ENDPOINT"),
+            'access_key': os.getenv("AWS_ACCESS_KEY_ID"),
+            'secret_key': os.getenv("AWS_SECRET_ACCESS_KEY"),
+            'bucket': bucket_name
 }
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
 
-# Path pointers
+# Output Paths
 EVALUATION_PREFIX = "evaluation_dataset/"
 CENTROIDS_PATH = "runs/stats_strong_16c.csv"
 FINAL_RAW_CSV = f"runs/{RUN_IDENTIFIER}.csv"
@@ -45,18 +40,18 @@ if __name__ == "__main__":
     # Verify existence of required upstream local files
     if not os.path.exists(CENTROIDS_PATH):
         raise FileNotFoundError(f"Missing {CENTROIDS_PATH}. Please run benchmark.py first.")
-
+    
     # Load best centroids from local storage
     stats_df = pd.read_csv(CENTROIDS_PATH)
     centroids_json_string = stats_df['champion_centroids'].iloc[0]
     champion_centroids = np.array(json.loads(centroids_json_string), dtype=np.float32)
-
-    print("Inizializzazione SparkSession con configurazioni S3...")
+    
+    print("Initializing SparkSession with S3 configurations...")
 
     # Creates spark session with S3 connector configurations
     spark = SparkSession.builder \
+        .master("spark://master:7077") \
         .appName(f"Diagnostic_{RUN_IDENTIFIER}") \
-        .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.4.1,org.apache.hadoop:hadoop-common:3.4.1') \
         .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
         .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "false") \
         .config('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider') \

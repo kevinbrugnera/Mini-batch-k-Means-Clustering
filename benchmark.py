@@ -1,87 +1,78 @@
 import os
-import sys
-import json
 import time
 from dotenv import load_dotenv
 
-# Force spark to use python version used in the environment
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
 # Load .env file containing IP addresses
-load_dotenv("ips.env")     
+load_dotenv("ips.env")
 
+import json
 import numpy as np
-from pyspark.sql import SparkSession
-from functions import mini_batch_run
 import boto3
 import urllib3
+from pyspark.sql import SparkSession
+from functions import mini_batch_run
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 # Global Variables
 K = 4
 NUM_ITER = 50                 # Iterations for statistics
 EPOCHS = 20                   # Training steps
 SAMPLE_SIZE = 0               # Documents to analyze. Set to zero if you want to analyze full dataset
-RUN_IDENTIFIER = "strong_12c"  
+RUN_IDENTIFIER = "strong_12c"
 NUM_PARTITIONS = 48
 
 # S3 Credential Variables
 bucket_name = os.getenv("S3_BUCKET")
 
-s3_creds = {
-    'endpoint': os.getenv("S3_ENDPOINT"),
-    'access_key': os.getenv("AWS_ACCESS_KEY_ID"),
-    'secret_key': os.getenv("AWS_SECRET_ACCESS_KEY"),
-    'bucket': bucket_name
+s3_creds = {'endpoint': os.getenv("S3_ENDPOINT"),
+            'access_key': os.getenv("AWS_ACCESS_KEY_ID"),
+            'secret_key': os.getenv("AWS_SECRET_ACCESS_KEY"),
+            'bucket': bucket_name
 }
 
 # Directory setup
 os.makedirs("runs", exist_ok=True)
 
-# Dynamic Output Paths
+# Output Paths
 FINAL_RAW_CSV = f"runs/{RUN_IDENTIFIER}.csv"
 FINAL_STATS_CSV = f"runs/stats_{RUN_IDENTIFIER}.csv"
-
-# Read initialization file with best parameters
-PARAMS_JSON = "runs/b_search_metadata.json" 
-
-# Updated Prefix pointing to the dataset in S3
+PARAMS_JSON = "runs/b_search_metadata.json"
 DATASET_PREFIX = "rcv1_dataset/"
 
 if __name__ == "__main__":
     
     # Verify existence of required parameter file
     if not os.path.exists(PARAMS_JSON):
-        raise FileNotFoundError(f"Missing {PARAMS_JSON}. Please run initialization.py first.")
-        
+        raise FileNotFoundError(f"Missing {PARAMS_JSON}. Please run grid_search.py first.")
+    
     # Load optimal parameters found during the initialization step
     with open(PARAMS_JSON, "r") as f:
         init_metadata = json.load(f)
-
+    
     # Extract value
     batch_size = int(init_metadata["metrics_summary"]["optimal_b_found"])
-
-    print("Inizializzazione SparkSession con configurazioni S3...")
+    
+    print("Initializing SparkSession with S3 configurations...")
     
     # Creates spark session with S3 connector configurations
     spark = SparkSession.builder \
-        .appName(f"MiniBatch_{RUN_IDENTIFIER}") \
-        .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.4.1,org.apache.hadoop:hadoop-common:3.4.1') \
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
-        .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "false") \
-        .config('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider') \
+        .master("spark://master:7077") \
+        .appName("KMeans_GridSearch") \
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")\
+        .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "false")\
+        .config('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider')\
         .config('spark.hadoop.fs.s3a.access.key', s3_creds['access_key']) \
         .config('spark.hadoop.fs.s3a.secret.key', s3_creds['secret_key']) \
         .config('spark.hadoop.fs.s3a.endpoint', s3_creds['endpoint']) \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.metadatastore.impl", "org.apache.hadoop.fs.s3a.s3guard.NullMetadataStore") \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
-        .config("com.amazonaws.sdk.disableCertChecking", "true") \
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled","false") \
+        .config("com.amazonaws.sdk.disableCertChecking","true") \
         .getOrCreate()
-            
+    
     spark.sparkContext.setLogLevel("ERROR")
     
     print(f"Loading RCV1 Parquet Dataset from Cloud Storage...")

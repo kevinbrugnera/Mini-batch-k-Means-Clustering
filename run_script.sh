@@ -42,13 +42,14 @@ if [ -n "$WORKER_IPS" ]; then
 mkdir -p /tmp/spark-events
 
 spark-submit \
+    --packages org.apache.hadoop:hadoop-aws:3.4.1,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
     --master spark://$MASTER_IP:7077 \
     --driver-memory 2G \
     --executor-memory 5G \
     --conf spark.executor.memoryOverhead=2048 \
     --conf spark.memory.fraction=0.8 \
     --conf spark.memory.storageFraction=0.7 \
-    --conf spark.pyspark.python=$PWD/pyvenv/bin/python \
+    --conf spark.pyspark.python=/home/ubuntu/ProjectS3/pyvenv/bin/python \
     --conf spark.pyspark.driver.python=$PWD/pyvenv/bin/python \
     --total-executor-cores 16 \
     --executor-cores 4 \

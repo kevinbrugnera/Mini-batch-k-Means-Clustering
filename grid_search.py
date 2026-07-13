@@ -45,18 +45,17 @@ if __name__ == "__main__":
     spark = SparkSession.builder \
         .master("spark://master:7077") \
         .appName("KMeans_GridSearch") \
-        .config('spark.jars.packages', 'org.apache.hadoop:hadoop-aws:3.4.1,org.apache.hadoop:hadoop-common:3.4.1') \
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
-        .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "false") \
-        .config('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider') \
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")\
+        .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "false")\
+        .config('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider')\
         .config('spark.hadoop.fs.s3a.access.key', s3_creds['access_key']) \
         .config('spark.hadoop.fs.s3a.secret.key', s3_creds['secret_key']) \
         .config('spark.hadoop.fs.s3a.endpoint', s3_creds['endpoint']) \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.metadatastore.impl", "org.apache.hadoop.fs.s3a.s3guard.NullMetadataStore") \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
-        .config("com.amazonaws.sdk.disableCertChecking", "true") \
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled","false") \
+        .config("com.amazonaws.sdk.disableCertChecking","true") \
         .getOrCreate()
             
     spark.sparkContext.setLogLevel("ERROR")
