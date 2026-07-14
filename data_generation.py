@@ -4,7 +4,6 @@ import sys
 import subprocess
 import getpass
 import numpy as np 
-from sklearn.utils import shuffle 
 from dotenv import load_dotenv
 
 # Force spark to use python version used in the environment

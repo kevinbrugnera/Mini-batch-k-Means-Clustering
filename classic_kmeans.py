@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 from dotenv import load_dotenv
 
 # Force spark to use python version used in the environment

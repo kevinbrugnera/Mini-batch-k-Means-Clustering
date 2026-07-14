@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 from dotenv import load_dotenv
 
 # Force spark to use python version used in the environment
@@ -10,10 +9,7 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 # Load .env file containing IP addresses
 load_dotenv("ips.env")       
 
-import pandas as pd
 import numpy as np
-import json
-from datetime import datetime
 from pyspark.sql import SparkSession
 from functions import b_search
 
@@ -35,7 +31,6 @@ B_STATS_CSV = "runs/stats_b_search.csv"
 # Path pointing to the parquet dataset
 PARQUET_PATH = "data/rcv1_dataset"
 
-start = time.time()
 if __name__ == "__main__":
 
     #Check existence of required files
